@@ -162,7 +162,7 @@ export default function NewReportPage({
   return (
     <form className="page-form" onSubmit={submit} noValidate>
       <PageHeader
-        eyebrow="새 보고서"
+        eyebrow="보고서"
         title="주간보고 만들기"
         description="대상자·기간·저장소를 고르면 활동을 수집해 근거가 달린 초안을 만듭니다."
       />
@@ -172,9 +172,10 @@ export default function NewReportPage({
             className="step-card"
             title={
               <>
-                <span className="step-num">1</span>누구의 보고서인가요?
+                <span className="step-num">1</span>대상자
               </>
             }
+            description="저장된 팀을 불러오거나 GitHub ID를 직접 입력합니다."
           >
             {teams.length > 0 && (
               <div className="field">
@@ -231,9 +232,10 @@ export default function NewReportPage({
             className="step-card"
             title={
               <>
-                <span className="step-num">2</span>기간
+                <span className="step-num">2</span>조회 기간
               </>
             }
+            description="프리셋을 고르거나 시작일과 종료일을 지정합니다."
           >
             <div className="chip-row">
               {isDemo && demoPeriod && (

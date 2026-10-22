@@ -102,7 +102,7 @@ function Routes() {
         nav={adminNav}
         footerLink={
           <a className="nav-item" href={href("/")}>
-            <Icon name="back" size={18} />
+            <Icon name="back" size={16} />
             <span>워크스페이스로</span>
           </a>
         }
@@ -143,7 +143,7 @@ function Routes() {
       footerLink={
         isAdmin && (
           <a className="nav-item" href={href("/admin")}>
-            <Icon name="shield" size={18} />
+            <Icon name="shield" size={16} />
             <span>관리자 콘솔</span>
           </a>
         )

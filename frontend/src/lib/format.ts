@@ -112,7 +112,17 @@ export function dateTime(value: string | null | undefined) {
 
 export function fullDateTime(value: string | null | undefined) {
   if (!value) return "—";
-  return `${toDate(value).toLocaleString("ko-KR", { timeZone: TZ, hour12: false })} KST`;
+  const at = toDate(value).toLocaleString("ko-KR", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  return `${at} KST`;
 }
 
 export function relativeTime(value: string | null | undefined) {

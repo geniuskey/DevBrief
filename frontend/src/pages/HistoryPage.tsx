@@ -59,7 +59,7 @@ export default function HistoryPage() {
   return (
     <>
       <PageHeader
-        eyebrow="보고서"
+        eyebrow="워크스페이스"
         title="보고서 기록"
         description="생성한 주간보고를 기간·상태별로 찾아 다시 열 수 있습니다."
         actions={

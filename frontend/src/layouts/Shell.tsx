@@ -14,6 +14,26 @@ export interface NavItem {
   match?: (path: string) => boolean;
 }
 
+function BrandMark({ size = 28 }: { size?: number }) {
+  return (
+    <svg
+      className="brand-mark"
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect width="32" height="32" rx="8" fill="currentColor" />
+      <path
+        fill="#fff"
+        fillRule="evenodd"
+        d="M9 8h7a8 8 0 0 1 0 16H9zm4 4v8h3a4 4 0 0 0 0-8z"
+      />
+    </svg>
+  );
+}
+
 export default function Shell({
   variant,
   path,
@@ -33,6 +53,7 @@ export default function Shell({
   const { dark, toggle } = useTheme();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]);
+  const admin = variant === "admin";
   const active = (item: NavItem) =>
     item.match ? item.match(path) : path === item.path;
   return (
@@ -47,25 +68,24 @@ export default function Shell({
         >
           <Icon name={open ? "x" : "menu"} size={20} />
         </button>
-        <a className="brand" href={href(variant === "admin" ? "/admin" : "/")}>
-          <span className="brand-mark">D</span>
+        <a className="brand" href={href(admin ? "/admin" : "/")}>
+          <BrandMark size={24} />
           DevBrief
-          {variant === "admin" && <span className="brand-tag">Admin</span>}
+          {admin && <span className="brand-tag">관리자</span>}
         </a>
         <span />
       </header>
       <aside className="sidebar">
-        <a className="brand" href={href(variant === "admin" ? "/admin" : "/")}>
-          <span className="brand-mark">D</span>
+        <a className="brand" href={href(admin ? "/admin" : "/")}>
+          <BrandMark />
           <span className="brand-text">
             DevBrief
-            <small>
-              {variant === "admin" ? "관리자 콘솔" : "개발 주간보고"}
-            </small>
+            <small>{admin ? "관리자 콘솔" : "개발 주간보고"}</small>
           </span>
         </a>
         {primary && <div className="sidebar-primary">{primary}</div>}
-        <nav aria-label={variant === "admin" ? "관리 메뉴" : "주 메뉴"}>
+        <nav aria-label={admin ? "관리 메뉴" : "주 메뉴"}>
+          <span className="nav-label">{admin ? "관리" : "워크스페이스"}</span>
           {nav.map((item) => (
             <a
               key={item.path}
@@ -73,7 +93,7 @@ export default function Shell({
               className={`nav-item ${active(item) ? "active" : ""}`}
               aria-current={active(item) ? "page" : undefined}
             >
-              <Icon name={item.icon} size={18} />
+              <Icon name={item.icon} size={16} />
               <span>{item.label}</span>
             </a>
           ))}
@@ -82,14 +102,22 @@ export default function Shell({
           {footerLink}
           <div className="env-chip">
             <span className={`dot ${isDemo ? "dot-warning" : "dot-success"}`} />
-            {capabilities
-              ? isDemo
-                ? "데모 환경 · 외부 전송 없음"
-                : "사내 GHES 연결"
-              : "연결 확인 중"}
+            {capabilities ? (
+              isDemo ? (
+                <span>
+                  <strong>데모 환경</strong> · 외부 전송 없음
+                </span>
+              ) : (
+                <span>
+                  <strong>사내 GHES</strong> 연결
+                </span>
+              )
+            ) : (
+              "연결 확인 중"
+            )}
           </div>
           <div className="user-chip">
-            <Avatar login={me?.name ?? "?"} size={30} />
+            <Avatar login={me?.name ?? "?"} size={28} />
             <div>
               <strong>{me?.name ?? "…"}</strong>
               <small>{me?.role === "admin" ? "관리자" : "작성자"}</small>

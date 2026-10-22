@@ -33,7 +33,7 @@ export default function ReportList({ rows }: { rows: History[] }) {
         <li key={row.id}>
           <a className="report-row" href={href(`/reports/${row.id}`)}>
             <span className="report-row-icon">
-              <Icon name="file" size={18} />
+              <Icon name="file" size={16} />
             </span>
             <span className="report-row-main">
               <strong>
@@ -48,12 +48,19 @@ export default function ReportList({ rows }: { rows: History[] }) {
                 {relativeTime(row.created_at)} 생성
               </small>
             </span>
-            <span className="report-row-meta">
-              {row.github_logins && <AvatarStack logins={row.github_logins} />}
-              <CoverageBadge status={row.coverage_status} />
-              <StatusBadge status={row.status} />
-              <Icon name="chevronRight" className="muted-icon" />
+            <span className="report-row-people">
+              {row.github_logins && (
+                <AvatarStack logins={row.github_logins} max={3} />
+              )}
             </span>
+            <span className="report-row-meta">
+              {/* Complete coverage is the norm; only flag the exceptions. */}
+              {row.coverage_status !== "complete" && (
+                <CoverageBadge status={row.coverage_status} />
+              )}
+              <StatusBadge status={row.status} />
+            </span>
+            <Icon name="chevronRight" className="muted-icon" />
           </a>
         </li>
       ))}

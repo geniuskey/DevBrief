@@ -11,6 +11,7 @@ import {
   Card,
   EmptyState,
   LinkButton,
+  Menu,
   Skeleton,
   Stat,
   Tabs,
@@ -239,18 +240,27 @@ export default function ReportPage({ reportId }: { reportId: string }) {
           <Button icon="copy" onClick={() => void copy()}>
             Markdown 복사
           </Button>
-          <LinkButton
-            href={`/api/v1/reports/${report.id}/export?format=md`}
+          <Menu
+            label="내보내기"
             icon="download"
-          >
-            MD 다운로드
-          </LinkButton>
-          <LinkButton
-            href={`/api/v1/reports/${report.id}/export?format=html`}
-            icon="download"
-          >
-            HTML 다운로드
-          </LinkButton>
+            variant={draft ? "secondary" : "primary"}
+            items={[
+              {
+                label: "Markdown 다운로드",
+                hint: ".md",
+                icon: "file",
+                href: `/api/v1/reports/${encodeURIComponent(report.id)}/export?format=md`,
+                download: true,
+              },
+              {
+                label: "HTML 다운로드",
+                hint: ".html",
+                icon: "file",
+                href: `/api/v1/reports/${encodeURIComponent(report.id)}/export?format=html`,
+                download: true,
+              },
+            ]}
+          />
         </div>
       </div>
 

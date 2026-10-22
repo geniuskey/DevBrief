@@ -141,7 +141,7 @@ export default function AdminAudit() {
               <tbody>
                 {visible.map((log) => (
                   <tr key={log.id}>
-                    <td className="nowrap">{fullDateTime(log.time)}</td>
+                    <td className="nowrap tabular">{fullDateTime(log.time)}</td>
                     <td>
                       <strong>{log.principal}</strong>
                     </td>

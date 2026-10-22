@@ -91,7 +91,7 @@ export default function TeamsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="팀"
+        eyebrow="워크스페이스"
         title="팀"
         description="자주 쓰는 대상자·저장소 조합을 저장해 두고 한 번에 보고서를 만듭니다."
         actions={

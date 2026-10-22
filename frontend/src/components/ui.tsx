@@ -1,5 +1,9 @@
-import { useEffect, useRef } from "react";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import type {
+  ButtonHTMLAttributes,
+  KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
+} from "react";
 import Icon from "./Icon";
 import type { IconName } from "./Icon";
 import { avatarHue, initials } from "../lib/format";
@@ -424,6 +428,135 @@ export function Dialog({
         <div className="dialog-body">{children}</div>
         {footer && <footer>{footer}</footer>}
       </div>
+    </div>
+  );
+}
+
+export interface MenuItem {
+  label: string;
+  icon?: IconName;
+  hint?: string;
+  href?: string;
+  download?: boolean;
+  onSelect?: () => void;
+}
+
+export function Menu({
+  label,
+  icon,
+  variant = "secondary",
+  items,
+}: {
+  label: string;
+  icon?: IconName;
+  variant?: Variant;
+  items: MenuItem[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const id = useId();
+  useEffect(() => {
+    if (!open) return;
+    const root = ref.current;
+    root?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    const onPointer = (e: PointerEvent) => {
+      if (!root?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      root?.querySelector("button")?.focus();
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // Arrow keys move between items, per the WAI-ARIA menu button pattern.
+  function onKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    const all = [
+      ...e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ];
+    const at = all.indexOf(document.activeElement as HTMLElement);
+    const next =
+      e.key === "ArrowDown"
+        ? (at + 1) % all.length
+        : e.key === "ArrowUp"
+          ? (at - 1 + all.length) % all.length
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? all.length - 1
+              : -1;
+    if (next >= 0) {
+      e.preventDefault();
+      all[next].focus();
+    } else if (e.key === "Tab") setOpen(false);
+  }
+
+  // Unmount links only after their default action (a download) has started.
+  const closeSoon = () => window.setTimeout(() => setOpen(false));
+
+  return (
+    <div className="menu-wrap" ref={ref}>
+      <Button
+        variant={variant}
+        icon={icon}
+        iconAfter="chevronDown"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? id : undefined}
+        onClick={() => setOpen(!open)}
+      >
+        {label}
+      </Button>
+      {open && (
+        <div
+          className="menu"
+          role="menu"
+          id={id}
+          aria-label={label}
+          onKeyDown={onKeyDown}
+        >
+          {items.map((item) => {
+            const body = (
+              <>
+                {item.icon && <Icon name={item.icon} />}
+                <span>{item.label}</span>
+                {item.hint && <small>{item.hint}</small>}
+              </>
+            );
+            return item.href ? (
+              <a
+                key={item.label}
+                role="menuitem"
+                className="menu-item"
+                href={item.href}
+                download={item.download || undefined}
+                onClick={closeSoon}
+              >
+                {body}
+              </a>
+            ) : (
+              <button
+                key={item.label}
+                type="button"
+                role="menuitem"
+                className="menu-item"
+                onClick={() => {
+                  setOpen(false);
+                  item.onSelect?.();
+                }}
+              >
+                {body}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

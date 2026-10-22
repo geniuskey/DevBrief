@@ -64,7 +64,8 @@ test("create partial report, edit, exclude, restore, finalize and find history",
     page.getByRole("button", { name: "수정", exact: true }),
   ).toHaveCount(0);
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("link", { name: "MD 다운로드" }).click();
+  await page.getByRole("button", { name: "내보내기" }).click();
+  await page.getByRole("menuitem", { name: /Markdown 다운로드/ }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^devbrief-.*\.md$/);
   await page.evaluate(() => window.scrollTo(0, 0));
