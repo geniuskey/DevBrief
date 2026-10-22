@@ -23,6 +23,14 @@ def register_routes(app, settings, db_session, principal, visible_report):
                 except AppError as exc:
                     state = exc.code
                 result["repositories"].append({"full_name": name, "state": state})
+            result["organizations"] = []
+            for org in settings.org_scopes:
+                try:
+                    client.object("orgs/" + org)
+                    state = "accessible"
+                except AppError as exc:
+                    state = exc.code
+                result["organizations"].append({"login": org, "state": state})
             audit(db, user, "connection.ghes_tested")
             db.commit()
             return result
@@ -66,7 +74,7 @@ def register_routes(app, settings, db_session, principal, visible_report):
     from fastapi import Query, Response
     from sqlalchemy import func, select, update
 
-    from app.core.security import permitted_repositories, redact
+    from app.core.security import permitted_repositories, redact, scope_checker
     from app.models.entities import (
         AppUser,
         AuditLog,
@@ -78,18 +86,18 @@ def register_routes(app, settings, db_session, principal, visible_report):
         utcnow,
     )
     from app.schemas.contracts import FinalizeRequest, TeamInput, WorkItemPatch
+    from app.services.discovery import sync_org_scopes
     from app.services.reporting import render_html, render_report
 
-    def check_repos(repo_ids, db, user):
-        allowed = {r.id for r in permitted_repositories(db, user, settings)}
-        if not set(repo_ids) <= allowed:
-            raise AppError("REPO_FORBIDDEN", "허용되지 않은 저장소입니다", 403)
+    def check_repos(repo_ids, db, user, organizations=None):
+        if not scope_checker(db, user, settings)(repo_ids, organizations):
+            raise AppError("REPO_FORBIDDEN", "허용되지 않은 저장소 또는 조직입니다", 403)
 
     def accessible_team(team_id, db, user):
         team = db.get(Team, team_id)
         if not team or (team.created_by != user.id and user.role != "admin"):
             raise AppError("NOT_FOUND", "팀을 찾을 수 없습니다", 404)
-        check_repos(team.repository_ids, db, user)
+        check_repos(team.repository_ids, db, user, team.organizations)
         return team
 
     def team_json(team):
@@ -98,6 +106,7 @@ def register_routes(app, settings, db_session, principal, visible_report):
             "name": team.name,
             "github_logins": team.github_logins,
             "repository_ids": team.repository_ids,
+            "organizations": team.organizations or [],
         }
 
     @app.get("/api/v1/teams")
@@ -105,12 +114,12 @@ def register_routes(app, settings, db_session, principal, visible_report):
         rows = db.scalars(
             select(Team).where(Team.created_by == user.id) if user.role != "admin" else select(Team)
         )
-        allowed = {r.id for r in permitted_repositories(db, user, settings)}
-        return [team_json(t) for t in rows if set(t.repository_ids) <= allowed]
+        permits = scope_checker(db, user, settings)
+        return [team_json(t) for t in rows if permits(t.repository_ids, t.organizations)]
 
     @app.post("/api/v1/teams", status_code=201)
     def create_team(body: TeamInput, user=Depends(principal), db=Depends(db_session)):
-        check_repos(body.repository_ids, db, user)
+        check_repos(body.repository_ids, db, user, body.organizations)
         team = Team(created_by=user.id, **body.model_dump())
         team.name = redact(team.name)
         db.add(team)
@@ -126,11 +135,12 @@ def register_routes(app, settings, db_session, principal, visible_report):
     @app.put("/api/v1/teams/{team_id}")
     def edit_team(team_id: str, body: TeamInput, user=Depends(principal), db=Depends(db_session)):
         team = accessible_team(team_id, db, user)
-        check_repos(body.repository_ids, db, user)
-        team.name, team.github_logins, team.repository_ids = (
+        check_repos(body.repository_ids, db, user, body.organizations)
+        team.name, team.github_logins, team.repository_ids, team.organizations = (
             redact(body.name),
             body.github_logins,
             body.repository_ids,
+            body.organizations,
         )
         audit(db, user, "team.updated", team.id)
         db.commit()
@@ -158,11 +168,11 @@ def register_routes(app, settings, db_session, principal, visible_report):
         if team_id:
             accessible_team(team_id, db, user)
             stmt = stmt.where(Report.team_id == team_id)
-        allowed = {r.id for r in permitted_repositories(db, user, settings)}
+        permits = scope_checker(db, user, settings)
         rows = []
         for report, job in db.execute(stmt.limit(500)):
             req = job.request_json
-            if not set(req["repository_ids"]) <= allowed:
+            if not permits(req["repository_ids"], req.get("organizations")):
                 continue
             if from_date and req["end_date"] < from_date.isoformat():
                 continue
@@ -189,7 +199,10 @@ def register_routes(app, settings, db_session, principal, visible_report):
                 "end_date": req["end_date"],
                 "type": req.get("type", "team"),
                 "github_logins": req["github_logins"],
-                "repository_count": len(req["repository_ids"]),
+                "repository_count": report.coverage_json.get(
+                    "repositories_requested", len(req["repository_ids"])
+                ),
+                "organizations": req.get("organizations", []),
                 "work_item_count": item_counts.get(report.id, 0),
                 "team_id": report.team_id,
                 "team_name": team_names.get(report.team_id),
@@ -292,7 +305,7 @@ def register_routes(app, settings, db_session, principal, visible_report):
         job = db.get(Job, job_id)
         if not job or (job.requested_by != user.id and user.role != "admin"):
             raise AppError("NOT_FOUND", "작업을 찾을 수 없습니다", 404)
-        check_repos(job.request_json["repository_ids"], db, user)
+        check_repos(job.request_json["repository_ids"], db, user, job.request_json.get("organizations"))
         result = db.execute(
             update(Job)
             .where(Job.id == job.id, Job.status.in_(["queued", "running"]))
@@ -309,6 +322,13 @@ def register_routes(app, settings, db_session, principal, visible_report):
         audit(db, user, "job.cancelled", job.id)
         db.commit()
         return {"job_id": job.id, "status": "cancelled"}
+
+    @app.post("/api/v1/admin/organizations/sync")
+    def sync_organizations(user=Depends(admin), db=Depends(db_session)):
+        results = sync_org_scopes(app.state.factory, settings)
+        audit(db, user, "organization.synced")
+        db.commit()
+        return [{"login": org, **r} for org, r in results.items()]
 
     @app.get("/api/v1/admin/audit-logs")
     def audit_logs(limit: int = Query(100, ge=1, le=500), user=Depends(admin), db=Depends(db_session)):
@@ -331,6 +351,9 @@ def register_routes(app, settings, db_session, principal, visible_report):
     def policy(user=Depends(admin)):
         return {
             "allowed_repositories": settings.allowed_repos,
+            "org_scopes": settings.org_scopes,
+            "org_max_repositories": settings.org_max_repositories,
+            "org_sync_minutes": settings.org_sync_minutes,
             "allowed_orgs": sorted(settings.allowed_orgs),
             "data_policy": settings.data_policy,
             "retention_days": settings.retention_days,
@@ -385,7 +408,8 @@ def register_routes(app, settings, db_session, principal, visible_report):
                 "drafts": reports_by_status.get("draft", 0),
                 "finalized": reports_by_status.get("finalized", 0),
                 "work_items": db.scalar(select(func.count()).select_from(WorkItem)),
-                "repositories": len(settings.allowed_repos),
+                "repositories": len(permitted_repositories(db, user, settings)),
+                "org_scopes": len(settings.org_scopes),
             },
             "jobs_by_status": jobs_by_status,
             "daily_reports": [{"date": d.isoformat(), "count": n} for d, n in daily.items()],
@@ -428,6 +452,7 @@ def register_routes(app, settings, db_session, principal, visible_report):
                     "end_date": req["end_date"],
                     "login_count": len(req["github_logins"]),
                     "repository_count": len(req["repository_ids"]),
+                    "organizations": req.get("organizations", []),
                     "report_id": report_id,
                 }
             )

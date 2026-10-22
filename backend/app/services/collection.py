@@ -134,7 +134,7 @@ def collect(
     for index, repo in enumerate(repositories):
         progress("collecting", 5 + int(index / len(repositories) * 55))
         try:
-            if repo.full_name not in client.settings.allowed_repos:
+            if not client.settings.repo_allowed(repo.full_name):
                 raise IntegrationError("REPO_NOT_ALLOWED")
             root = "repos/" + repo.full_name
             info = client.object(root)

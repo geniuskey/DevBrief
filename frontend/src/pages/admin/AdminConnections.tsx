@@ -13,7 +13,10 @@ type Result = Record<string, unknown> & {
   warning?: string;
   features?: Record<string, boolean>;
   repositories?: { full_name: string; state: string }[];
+  organizations?: { login: string; state: string }[];
 };
+
+type SyncResult = { login: string; state: string; repositories: number | null };
 
 const featureLabel: Record<string, string> = {
   rest_pull_reviews: "PR 리뷰 REST API",
@@ -47,6 +50,26 @@ export default function AdminConnections() {
     Record<string, { at: string; data?: Result; error?: string }>
   >({});
   const [busy, setBusy] = useState("");
+  const [sync, setSync] = useState<{ at: string; rows: SyncResult[] } | null>(
+    null,
+  );
+
+  async function syncOrgs() {
+    setBusy("sync");
+    try {
+      const rows = await api<SyncResult[]>("/admin/organizations/sync", {
+        method: "POST",
+      });
+      setSync({ at: new Date().toISOString(), rows });
+    } catch (e) {
+      setSync({
+        at: new Date().toISOString(),
+        rows: [{ login: errorMessage(e), state: "error", repositories: null }],
+      });
+    } finally {
+      setBusy("");
+    }
+  }
 
   async function test(service: string) {
     setBusy(service);
@@ -192,6 +215,60 @@ export default function AdminConnections() {
                         </tbody>
                       </table>
                     )}
+                    {!!r.data.organizations?.length && (
+                      <table className="table table-compact">
+                        <thead>
+                          <tr>
+                            <th>조직 (전체 허용)</th>
+                            <th>접근</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {r.data.organizations.map((o) => (
+                            <tr key={o.login}>
+                              <td className="mono">{o.login}/*</td>
+                              <td>
+                                {o.state === "accessible" ? (
+                                  <span className="status-text status-success">
+                                    <Icon name="check" size={14} /> 접근 가능
+                                  </span>
+                                ) : (
+                                  <span className="status-text status-danger">
+                                    <Icon name="alert" size={14} /> {o.state}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {svc.key === "ghes" && sync && (
+                      <table className="table table-compact">
+                        <thead>
+                          <tr>
+                            <th>동기화 ({fullDateTime(sync.at)})</th>
+                            <th>저장소</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sync.rows.map((o) => (
+                            <tr key={o.login}>
+                              <td className="mono">{o.login}</td>
+                              <td>
+                                {o.state === "synced" ? (
+                                  `${o.repositories}개`
+                                ) : (
+                                  <span className="status-text status-danger">
+                                    <Icon name="alert" size={14} /> {o.state}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                     {r.data.warning && (
                       <Banner tone="warning">{r.data.warning}</Banner>
                     )}
@@ -211,6 +288,17 @@ export default function AdminConnections() {
                 >
                   연결 검사
                 </Button>
+                {svc.key === "ghes" && (
+                  <Button
+                    icon="refresh"
+                    variant="ghost"
+                    loading={busy === "sync"}
+                    disabled={!!busy && busy !== "sync"}
+                    onClick={() => void syncOrgs()}
+                  >
+                    조직 저장소 동기화
+                  </Button>
+                )}
               </footer>
             </Card>
           );

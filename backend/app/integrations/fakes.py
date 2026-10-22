@@ -59,6 +59,29 @@ class FakeGHES:
             if login not in {"alice", "bob", "carol", "build-bot"}:
                 return httpx.Response(404, json={"message": "Not Found"})
             data = account(login)
+        elif path.startswith("/orgs/"):
+            parts = path.split("/")
+            if parts[2].lower() != "example-org":
+                return httpx.Response(404, json={"message": "Not Found"})
+            if len(parts) == 3:
+                data = {"login": "example-org", "id": 100, "type": "Organization"}
+            elif parts[3:] == ["repos"]:
+                # legacy-tools has no push in the demo period and is skipped by org-scope runs.
+                data = [
+                    {
+                        "full_name": f"example-org/{name}",
+                        "pushed_at": pushed,
+                        "archived": name == "legacy-tools",
+                    }
+                    for name, pushed in [
+                        ("vision", "2026-10-16T01:00:00Z"),
+                        ("platform", "2026-10-14T02:00:00Z"),
+                        ("restricted", "2026-10-13T02:00:00Z"),
+                        ("legacy-tools", "2025-03-02T02:00:00Z"),
+                    ]
+                ]
+            else:
+                return httpx.Response(404, json={"message": "Not Found"})
         elif path.startswith("/repos/"):
             parts = path.split("/")
             repo = "/".join(parts[2:4])

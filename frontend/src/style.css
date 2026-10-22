@@ -1321,6 +1321,15 @@ textarea:disabled {
   white-space: nowrap;
 }
 
+.repo-note-info {
+  color: var(--info);
+  background: var(--info-soft);
+  border-color: var(--info-line);
+}
+.repo-option.covered {
+  cursor: default;
+}
+
 /* ───────────── Home ───────────── */
 .hero {
   display: grid;

@@ -117,6 +117,22 @@
         }
       }
     },
+    "/api/v1/organizations": {
+      "get": {
+        "summary": "Organizations",
+        "operationId": "organizations_api_v1_organizations_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/reports": {
       "post": {
         "summary": "Create Report",
@@ -726,6 +742,22 @@
         }
       }
     },
+    "/api/v1/admin/organizations/sync": {
+      "post": {
+        "summary": "Sync Organizations",
+        "operationId": "sync_organizations_api_v1_admin_organizations_sync_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/audit-logs": {
       "get": {
         "summary": "Audit Logs",
@@ -927,8 +959,15 @@
             },
             "type": "array",
             "maxItems": 20,
-            "minItems": 1,
             "title": "Repository Ids"
+          },
+          "organizations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Organizations"
           },
           "start_date": {
             "type": "string",
@@ -973,7 +1012,6 @@
         "type": "object",
         "required": [
           "github_logins",
-          "repository_ids",
           "start_date",
           "end_date"
         ],
@@ -1002,16 +1040,22 @@
             },
             "type": "array",
             "maxItems": 20,
-            "minItems": 1,
             "title": "Repository Ids"
+          },
+          "organizations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Organizations"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "name",
-          "github_logins",
-          "repository_ids"
+          "github_logins"
         ],
         "title": "TeamInput"
       },

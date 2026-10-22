@@ -10,10 +10,18 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def org_logins(values: list[str]) -> list[str]:
+    if any(not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", s) for s in values):
+        raise ValueError("조직 이름 형식을 확인하세요")
+    return list(dict.fromkeys(s.lower() for s in values))
+
+
 class ReportRequest(StrictModel):
     type: Literal["personal", "team"] = "team"
     github_logins: list[str] = Field(min_length=1, max_length=50)
-    repository_ids: list[str] = Field(min_length=1, max_length=20)
+    repository_ids: list[str] = Field(default_factory=list, max_length=20)
+    # Whole organizations, expanded to their current repositories when the job runs.
+    organizations: list[str] = Field(default_factory=list, max_length=10)
     start_date: date
     end_date: date
     timezone: str = "Asia/Seoul"
@@ -28,8 +36,15 @@ class ReportRequest(StrictModel):
             raise ValueError("GitHub ID 형식을 확인하세요")
         return list(dict.fromkeys(s.lower() for s in values))
 
+    @field_validator("organizations")
+    @classmethod
+    def orgs(cls, values):
+        return org_logins(values)
+
     @model_validator(mode="after")
     def dates(self):
+        if not self.repository_ids and not self.organizations:
+            raise ValueError("저장소 또는 조직을 1개 이상 선택하세요")
         try:
             tz = ZoneInfo(self.timezone)
         except (ZoneInfoNotFoundError, ValueError) as exc:
@@ -65,9 +80,22 @@ class FinalizeRequest(StrictModel):
 class TeamInput(StrictModel):
     name: str = Field(min_length=1, max_length=100)
     github_logins: list[str] = Field(min_length=1, max_length=50)
-    repository_ids: list[str] = Field(min_length=1, max_length=20)
+    repository_ids: list[str] = Field(default_factory=list, max_length=20)
+    organizations: list[str] = Field(default_factory=list, max_length=10)
 
     @field_validator("github_logins")
     @classmethod
     def logins(cls, values):
         return ReportRequest.logins(values)
+
+    @field_validator("organizations")
+    @classmethod
+    def orgs(cls, values):
+        return org_logins(values)
+
+    @model_validator(mode="after")
+    def scope(self):
+        if not self.repository_ids and not self.organizations:
+            raise ValueError("저장소 또는 조직을 1개 이상 선택하세요")
+        self.repository_ids = list(dict.fromkeys(self.repository_ids))
+        return self

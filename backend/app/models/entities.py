@@ -43,6 +43,9 @@ class Repository(Base):
     full_name: Mapped[str] = mapped_column(String(300), unique=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     access_state: Mapped[str] = mapped_column(String(30), default="unverified")
+    # True when found by listing an `org/*` scope rather than listed explicitly.
+    discovered: Mapped[bool] = mapped_column(Boolean, default=False)
+    pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Team(Base):
@@ -52,6 +55,7 @@ class Team(Base):
     created_by: Mapped[str] = mapped_column(ForeignKey("app_users.id", ondelete="RESTRICT"))
     github_logins: Mapped[list] = mapped_column(JSON)
     repository_ids: Mapped[list] = mapped_column(JSON)
+    organizations: Mapped[list] = mapped_column(JSON, default=list)
 
 
 class Job(Base):

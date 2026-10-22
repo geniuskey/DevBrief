@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { api, errorMessage } from "../api/client";
 import Icon from "../components/Icon";
-import { LoginInput, RepoPicker } from "../components/Pickers";
+import { LoginInput, OrgPicker, RepoPicker } from "../components/Pickers";
 import { useToast } from "../components/Toast";
 import {
   AvatarStack,
@@ -18,6 +18,8 @@ import {
   kstDate,
   periodLabel,
   periodPresets,
+  repoOrg,
+  scopeLabel,
 } from "../lib/format";
 import { navigate } from "../lib/router";
 import { useSession } from "../lib/session";
@@ -31,7 +33,8 @@ export default function NewReportPage({
   teamId: string;
 }) {
   const session = useSession();
-  const { repositories, teams, isDemo, capabilities, loading } = session;
+  const { repositories, organizations, teams, isDemo, capabilities, loading } =
+    session;
   const toast = useToast();
   const today = kstDate();
   const presets = periodPresets(today);
@@ -43,6 +46,7 @@ export default function NewReportPage({
   const [start, setStart] = useState(presets[0]?.start ?? today);
   const [end, setEnd] = useState(presets[0]?.end ?? today);
   const [selected, setSelected] = useState<string[]>([]);
+  const [orgs, setOrgs] = useState<string[]>([]);
   const [saveTeam, setSaveTeam] = useState(false);
   const [teamName, setTeamName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -72,10 +76,16 @@ export default function NewReportPage({
     setTeamId(team.id);
     setLogins(team.github_logins);
     setSelected(team.repository_ids);
+    setOrgs(team.organizations ?? []);
     setType("team");
     setSaveTeam(false);
   }
 
+  // Repositories inside a whole-org scope are collected anyway; don't send them twice.
+  const repoIds = selected.filter((id) => {
+    const repo = repositories.find((r) => r.id === id);
+    return !repo || !orgs.includes(repoOrg(repo.full_name));
+  });
   const days = start && end ? daysBetween(start, end) : 0;
   const problems: string[] = [];
   if (!logins.length) problems.push("대상 GitHub ID를 1명 이상 입력하세요.");
@@ -86,8 +96,9 @@ export default function NewReportPage({
     problems.push("종료일은 시작일 이후여야 합니다.");
   else if (days > 93) problems.push("조회 기간은 최대 93일입니다.");
   if (end > today) problems.push("미래 날짜는 조회할 수 없습니다.");
-  if (!selected.length) problems.push("저장소를 1개 이상 선택하세요.");
-  if (selected.length > 20)
+  if (!repoIds.length && !orgs.length)
+    problems.push("저장소 또는 조직을 1개 이상 선택하세요.");
+  if (repoIds.length > 20)
     problems.push("저장소는 최대 20개까지 선택할 수 있습니다.");
   if (saveTeam && !teamName.trim())
     problems.push("저장할 팀 이름을 입력하세요.");
@@ -109,7 +120,8 @@ export default function NewReportPage({
           body: JSON.stringify({
             name: teamName.trim(),
             github_logins: logins,
-            repository_ids: selected,
+            repository_ids: repoIds,
+            organizations: orgs,
           }),
         });
         team = created.id;
@@ -121,7 +133,8 @@ export default function NewReportPage({
         body: JSON.stringify({
           type,
           github_logins: logins,
-          repository_ids: selected,
+          repository_ids: repoIds,
+          organizations: orgs,
           start_date: start,
           end_date: end,
           timezone: "Asia/Seoul",
@@ -279,11 +292,20 @@ export default function NewReportPage({
                 <span className="step-num">3</span>대상 저장소
               </>
             }
-            description="관리자가 허용한 저장소만 표시됩니다."
+            description="관리자가 허용한 조직·저장소만 표시됩니다."
           >
+            <OrgPicker
+              organizations={organizations}
+              selected={orgs}
+              onChange={(v) => {
+                setOrgs(v);
+                setTeamId("");
+              }}
+            />
             <RepoPicker
               repositories={repositories}
               selected={selected}
+              coveredOrgs={orgs}
               onChange={(ids) => {
                 setSelected(ids);
                 setTeamId("");
@@ -317,7 +339,9 @@ export default function NewReportPage({
               </div>
               <div>
                 <dt>저장소</dt>
-                <dd>{selected.length}개</dd>
+                <dd>
+                  {scopeLabel({ repository_ids: repoIds, organizations: orgs })}
+                </dd>
               </div>
               <div>
                 <dt>형식</dt>

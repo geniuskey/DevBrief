@@ -8,6 +8,7 @@ export interface Overview {
     finalized: number;
     work_items: number;
     repositories: number;
+    org_scopes?: number;
   };
   jobs_by_status: Record<string, number>;
   daily_reports: { date: string; count: number }[];
@@ -49,6 +50,9 @@ export interface Audit {
 }
 export interface Policy {
   allowed_repositories: string[];
+  org_scopes: string[];
+  org_max_repositories: number;
+  org_sync_minutes: number;
   allowed_orgs: string[];
   data_policy: string;
   retention_days: number;
@@ -81,6 +85,7 @@ export const actionLabel: Record<string, string> = {
   "job.cancelled": "작업 취소",
   "connection.ghes_tested": "GHES 연결 검사",
   "connection.llm_tested": "LLM 연결 검사",
+  "organization.synced": "조직 저장소 동기화",
   "audit.viewed": "감사 로그 조회",
   "admin.overview_viewed": "운영 개요 조회",
   "admin.jobs_viewed": "작업 목록 조회",

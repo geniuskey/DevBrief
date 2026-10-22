@@ -20,6 +20,15 @@ def render_report(request: dict, items: list, coverage: dict, warnings: list) ->
         f"> 범위: {coverage.get('repositories_succeeded', 0)}/{coverage.get('repositories_requested', 0)} 저장소 수집 완료 · "
         f"수집 상태: {coverage.get('status', 'unknown')} · 최종 수집: {coverage.get('collected_at', '')}",
         "> 조회 가능한 범위의 활동 기록이며, 전체 개발량이나 인사 평가를 대표하지 않습니다.",
+    ]
+    if request.get("organizations"):
+        lines.insert(
+            -1,
+            "> 조직 전체: "
+            + ", ".join(md_text(o) for o in request["organizations"])
+            + f" · 기간 내 활동 없는 저장소 등 {len(coverage.get('excluded_repos', []))}개 제외",
+        )
+    lines += [
         "",
         "## 이번 주 주요 업무",
         "",

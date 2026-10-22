@@ -1,4 +1,17 @@
 const TZ = "Asia/Seoul";
+
+export const repoOrg = (fullName: string) => fullName.split("/")[0];
+
+export function scopeLabel(scope: {
+  repository_ids: string[];
+  organizations?: string[];
+}) {
+  const orgs = scope.organizations ?? [];
+  const parts = orgs.length ? [`조직 ${orgs.join(", ")} 전체`] : [];
+  if (scope.repository_ids.length || !orgs.length)
+    parts.push(`저장소 ${scope.repository_ids.length}개`);
+  return parts.join(" + ");
+}
 const DAY = 86400000;
 
 export const kstDate = (d: Date = new Date()) =>

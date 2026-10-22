@@ -3,6 +3,10 @@ export interface Repository {
   full_name: string;
   access_state: string;
 }
+export interface Organization {
+  login: string;
+  repository_count: number;
+}
 export interface Evidence {
   id: string;
   label: string;
@@ -53,6 +57,7 @@ export interface ReportRequest {
   type?: string;
   github_logins: string[];
   repository_ids?: string[];
+  organizations?: string[];
   start_date: string;
   end_date: string;
   team_id?: string | null;
@@ -81,6 +86,7 @@ export interface Team {
   name: string;
   github_logins: string[];
   repository_ids: string[];
+  organizations?: string[];
 }
 export interface History {
   id: string;
@@ -92,6 +98,7 @@ export interface History {
   type?: string;
   github_logins?: string[];
   repository_count?: number;
+  organizations?: string[];
   work_item_count?: number;
   team_id?: string | null;
   team_name?: string | null;
