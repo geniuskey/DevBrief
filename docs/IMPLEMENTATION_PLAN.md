@@ -10,11 +10,11 @@
 - [x] pytest + frontend tests + lint/typecheck 결과 기록 및 커밋
 
 ## Phase 1 — GHES 수집
-- [ ] TLS / 호스트·경로 검증 / secret 파일 / 연결 검사
-- [ ] repo allowlist / 페이지네이션 / retry / 서버 기능 정보
-- [ ] 날짜 [start, end) 변환, PR·커밋·리뷰 수집 및 증거 저장
-- [ ] PR 커밋 중복 제거, 리뷰 전용 기여, 부분 실패 및 커버리지
-- [ ] 수집 / 시간 / 오류 / SSRF 회귀 검증 및 커밋
+- [x] TLS / 호스트·경로 검증 / secret 파일 / 연결 검사
+- [x] repo allowlist / 페이지네이션 / retry / 서버 기능 정보
+- [x] 날짜 [start, end) 변환, PR·커밋·리뷰 수집 및 증거 저장
+- [x] PR 커밋 중복 제거, 리뷰 전용 기여, 부분 실패 및 커버리지
+- [x] 수집 / 시간 / 오류 / SSRF 회귀 검증 및 커밋
 
 ## Phase 2 — 보고 엔진
 - [ ] 결정론 PR 그룹, 보수적인 독립 커밋 그룹

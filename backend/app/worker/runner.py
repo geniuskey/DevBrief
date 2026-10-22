@@ -6,9 +6,12 @@ from sqlalchemy import and_, or_, select, update
 from app.core.db import make_engine, session_factory
 from app.core.security import audit, seed_repositories
 from app.core.settings import get_settings
+from app.integrations.ghes_client import GHESClient
 from app.models.entities import Job, Report, ReportRevision, Repository, WorkItem, uid, utcnow
 from app.schemas.contracts import ReportRequest
-from app.services.demo import generate_demo
+from app.services.collection import collect
+from app.services.grouping import group_work
+from app.services.persistence import store_collection
 from app.services.reporting import render_report
 
 
@@ -41,13 +44,21 @@ def run_once(factory, settings) -> bool:
             job = db.get(Job, job_id)
             request = ReportRequest.model_validate(job.request_json)
             repositories = list(db.scalars(select(Repository).where(Repository.id.in_(request.repository_ids))))
-            items, coverage, warnings = generate_demo(request, repositories)
+            client = GHESClient(settings)
+            try:
+                collection = collect(client, request, repositories)
+            finally:
+                client.close()
+            items = group_work(collection)
+            coverage, warnings = collection.coverage, collection.warnings
+            store_collection(db, job.id, request, collection)
             report = Report(job_id=job.id, owner_id=job.requested_by, team_id=request.team_id, coverage_json=coverage)
             db.add(report)
             db.flush()
             stored = []
             for item in items:
-                row = WorkItem(report_id=report.id, **vars(item))
+                values = {k: v for k, v in vars(item).items() if k != "source"}
+                row = WorkItem(report_id=report.id, **values)
                 db.add(row)
                 stored.append(row)
             db.flush()
