@@ -55,11 +55,17 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_security(self):
         import re
-        if not self.allowed_repos or any(not re.fullmatch(r"[a-z0-9_.-]+/[a-z0-9_.-]+", r) for r in self.allowed_repos):
+
+        if not self.allowed_repos or any(
+            not re.fullmatch(r"[a-z0-9_.-]+/[a-z0-9_.-]+", r) for r in self.allowed_repos
+        ):
             raise ValueError("명시적인 GHES_ALLOWED_REPOS가 필요합니다")
         if self.allowed_orgs and any(r.split("/")[0] not in self.allowed_orgs for r in self.allowed_repos):
             raise ValueError("저장소의 조직이 허용 목록에 없습니다")
-        if min(self.max_pages, self.max_events, self.max_api_calls, self.lease_seconds, self.retention_days) < 1:
+        if (
+            min(self.max_pages, self.max_events, self.max_api_calls, self.lease_seconds, self.retention_days)
+            < 1
+        ):
             raise ValueError("수집 및 보관 제한은 양수여야 합니다")
         if not self.single_user_mode and (not self.trusted_proxy_ips or not self.proxy_secret_file):
             raise ValueError("다중 사용자 모드에는 신뢰 프록시와 서명 secret 파일이 필요합니다")

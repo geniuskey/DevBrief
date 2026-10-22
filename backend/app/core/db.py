@@ -13,9 +13,11 @@ def make_engine(url: str):
             kwargs["poolclass"] = StaticPool
     engine = create_engine(url, **kwargs)
     if url.startswith("sqlite"):
+
         @event.listens_for(engine, "connect")
         def enable_foreign_keys(connection, _):
             connection.execute("PRAGMA foreign_keys=ON")
+
     return engine
 
 

@@ -32,11 +32,31 @@ def register_routes(app, settings, db_session, principal, visible_report):
     @app.get("/api/v1/github/users")
     def github_users(q: str, user=Depends(principal)):
         import re
+
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", q):
             raise AppError("INVALID_LOGIN", "정확한 GitHub ID를 입력하세요", 422)
         client = GHESClient(settings)
         try:
             account = client.user(q)
-            return [{"login": account["login"], "github_numeric_id": account["id"], "is_bot": account.get("type") == "Bot"}]
+            return [
+                {
+                    "login": account["login"],
+                    "github_numeric_id": account["id"],
+                    "is_bot": account.get("type") == "Bot",
+                }
+            ]
+        finally:
+            client.close()
+
+    @app.post("/api/v1/admin/connections/llm/test")
+    def test_llm(user=Depends(admin), db=Depends(db_session)):
+        from app.integrations.llm_client import LLMClient
+
+        client = LLMClient(settings)
+        try:
+            result = client.test_connection()
+            audit(db, user, "connection.llm_tested")
+            db.commit()
+            return result
         finally:
             client.close()

@@ -24,5 +24,12 @@ def client(app):
 @pytest.fixture
 def report_body(client):
     repos = client.get("/api/v1/repositories").json()
-    return {"type": "team", "github_logins": ["alice", "bob"], "repository_ids": [r["id"] for r in repos],
-            "start_date": "2026-10-12", "end_date": "2026-10-18", "timezone": "Asia/Seoul", "policy": "metadata_only"}
+    return {
+        "type": "team",
+        "github_logins": ["alice", "bob"],
+        "repository_ids": [r["id"] for r in repos],
+        "start_date": "2026-10-12",
+        "end_date": "2026-10-18",
+        "timezone": "Asia/Seoul",
+        "policy": "metadata_only",
+    }

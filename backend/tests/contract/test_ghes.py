@@ -8,6 +8,7 @@ from app.integrations.ghes_client import GHESClient, IntegrationError
 
 def test_pagination_and_etag():
     seen = []
+
     def handler(request):
         seen.append(request)
         if request.headers.get("if-none-match"):
@@ -17,6 +18,7 @@ def test_pagination_and_etag():
         if page == "1":
             headers["link"] = '<https://github.internal.example/api/v3/items?page=2>; rel="next"'
         return httpx.Response(200, json=[{"page": page}], headers=headers)
+
     client = GHESClient(Settings(_env_file=None), httpx.MockTransport(handler))
     assert list(client.pages("items")) == [{"page": "1"}, {"page": "2"}]
     assert list(client.pages("items")) == [{"page": "1"}, {"page": "2"}]
@@ -25,9 +27,20 @@ def test_pagination_and_etag():
     client.close()
 
 
-@pytest.mark.parametrize("status,code", [(401,"GHES_UNAUTHORIZED"), (403,"REPO_NOT_ACCESSIBLE"), (404,"REPO_NOT_ACCESSIBLE"), (429,"RATE_LIMITED"), (503,"GHES_RESPONSE_ERROR")])
+@pytest.mark.parametrize(
+    "status,code",
+    [
+        (401, "GHES_UNAUTHORIZED"),
+        (403, "REPO_NOT_ACCESSIBLE"),
+        (404, "REPO_NOT_ACCESSIBLE"),
+        (429, "RATE_LIMITED"),
+        (503, "GHES_RESPONSE_ERROR"),
+    ],
+)
 def test_error_classification(status, code):
-    client = GHESClient(Settings(http_retries=0, _env_file=None), httpx.MockTransport(lambda _: httpx.Response(status)))
+    client = GHESClient(
+        Settings(http_retries=0, _env_file=None), httpx.MockTransport(lambda _: httpx.Response(status))
+    )
     with pytest.raises(IntegrationError) as error:
         client.get("user")
     assert error.value.code == code
@@ -36,9 +49,15 @@ def test_error_classification(status, code):
 
 def test_rate_limit_then_retry():
     calls, sleeps = [], []
+
     def handler(request):
         calls.append(request)
-        return httpx.Response(429, headers={"retry-after": "0"}) if len(calls) == 1 else httpx.Response(200, json={"ok": True})
+        return (
+            httpx.Response(429, headers={"retry-after": "0"})
+            if len(calls) == 1
+            else httpx.Response(200, json={"ok": True})
+        )
+
     client = GHESClient(Settings(_env_file=None), httpx.MockTransport(handler), sleep=sleeps.append)
     assert client.object("user") == {"ok": True}
     assert sleeps == [0]
@@ -47,9 +66,11 @@ def test_rate_limit_then_retry():
 
 def test_untrusted_pagination_does_not_receive_token():
     calls = []
+
     def handler(request):
         calls.append(str(request.url))
         return httpx.Response(200, json=[{}], headers={"link": '<https://evil.example/steal>; rel="next"'})
+
     client = GHESClient(Settings(_env_file=None), httpx.MockTransport(handler))
     with pytest.raises(AppError):
         list(client.pages("items"))

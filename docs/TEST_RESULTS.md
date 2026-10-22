@@ -12,3 +12,8 @@
 - Ruff / mypy (22 modules), frontend Vitest 2 tests / ESLint / production build: 통과.
 - npm audit: 0 vulnerabilities (Vitest 5.0.5 / Vite 8.3.5로 업데이트).
 - 실제 GHES 연결은 수행하지 않았습니다. Fake HTTP 계약과 구현 범위는 ghes-compatibility.md 참고.
+
+## Phase 2
+- pytest: 30 passed. LLM schema/evidence hallucination/30% 성능 수치/기여자 변경/JSON mode fallback/민감값 마스킹/SSRF/XSS 검증 포함.
+- Ruff format/check, mypy (24 modules), frontend Vitest 2 tests / ESLint / production build: 통과.
+- 실제 사내 모델 출력의 품질·사실성은 미검증. 의미적 근거 일치는 사람의 확인이 필요합니다.

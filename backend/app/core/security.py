@@ -23,9 +23,19 @@ def redact(value: str, secrets: tuple[str, ...] = ()) -> str:
     for secret in secrets:
         if secret:
             value = value.replace(secret, "[REDACTED]")
-    value = re.sub(r"(?s)-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----", "[REDACTED KEY]", value)
-    value = re.sub(r"\b(?:gh[pousr]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{8,})\b", "[REDACTED]", value)
-    value = re.sub(r"(?i)(authorization\s*[:=]\s*(?:bearer\s+)?|(?:api[_-]?key|password|secret|token)\s*[:=]\s*)[^\s,;]+", r"\1[REDACTED]", value)
+    value = re.sub(
+        r"(?s)-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----", "[REDACTED KEY]", value
+    )
+    value = re.sub(
+        r"\b(?:gh[pousr]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{8,})\b",
+        "[REDACTED]",
+        value,
+    )
+    value = re.sub(
+        r"(?i)(authorization\s*[:=]\s*(?:bearer\s+)?|(?:api[_-]?key|password|secret|token)\s*[:=]\s*)[^\s,;]+",
+        r"\1[REDACTED]",
+        value,
+    )
     value = re.sub(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b", "[EMAIL]", value)
     return value
 
@@ -33,9 +43,15 @@ def redact(value: str, secrets: tuple[str, ...] = ()) -> str:
 def validated_url(url: str, base: str, api: bool = True) -> str:
     u, b = urlsplit(url), urlsplit(base)
     decoded = unquote(u.path)
-    if (u.scheme != "https" or u.netloc != b.netloc or u.username or u.password
-            or "\\" in decoded or any(p in {"..", "."} for p in decoded.split("/"))
-            or any(ord(c) < 32 for c in url)):
+    if (
+        u.scheme != "https"
+        or u.netloc != b.netloc
+        or u.username
+        or u.password
+        or "\\" in decoded
+        or any(p in {"..", "."} for p in decoded.split("/"))
+        or any(ord(c) < 32 for c in url)
+    ):
         raise AppError("UNSAFE_URL", "허용되지 않은 외부 URL입니다", 502)
     if api and not (u.path == b.path.rstrip("/") or u.path.startswith(b.path.rstrip("/") + "/")):
         raise AppError("UNSAFE_URL", "허용 API 경로를 벗어났습니다", 502)
@@ -71,7 +87,9 @@ def authenticate(request: Request, db, settings: Settings) -> Principal:
         except ValueError:
             fresh = False
         signed = f"{timestamp}\n{principal}\n{request.method}\n{request.url.path}"
-        expected = hmac.new(settings.secret("proxy_secret_file").encode(), signed.encode(), hashlib.sha256).hexdigest()
+        expected = hmac.new(
+            settings.secret("proxy_secret_file").encode(), signed.encode(), hashlib.sha256
+        ).hexdigest()
         if not fresh or not hmac.compare_digest(signature, expected):
             raise AppError("UNAUTHENTICATED", "프록시 인증 서명이 올바르지 않습니다", 401)
     role = "admin" if principal in {s.strip() for s in settings.admin_principals.split(",")} else "author"
@@ -90,12 +108,20 @@ def permitted_repositories(db, principal: Principal, settings: Settings) -> list
     if principal.role != "admin":
         acl = json.loads(settings.repo_acl_json)
         allowed &= set(acl.get(principal.name, []))
-    return list(db.scalars(select(Repository).where(Repository.enabled.is_(True), Repository.full_name.in_(allowed))))
+    return list(
+        db.scalars(select(Repository).where(Repository.enabled.is_(True), Repository.full_name.in_(allowed)))
+    )
 
 
 def audit(db, principal: Principal | str, action: str, resource_id: str = "", result: str = "ok"):
-    db.add(AuditLog(principal=principal.name if isinstance(principal, Principal) else principal,
-                    action=action, resource_id=resource_id, result=result))
+    db.add(
+        AuditLog(
+            principal=principal.name if isinstance(principal, Principal) else principal,
+            action=action,
+            resource_id=resource_id,
+            result=result,
+        )
+    )
 
 
 def seed_repositories(db, settings: Settings):
