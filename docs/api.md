@@ -4,6 +4,7 @@
 - `/api/docs`: 외부 CDN 없는 endpoint 목록. `/api/openapi.json`: 실행 중 앱에서 생성한 OpenAPI 3 계약. 저장소 스냅샷은 [openapi.json](openapi.json)입니다.
 - 오류: `{code, message_ko, request_id, details_safe}`. 입력 오류 422, 인증 401, 범위 권한 403, 다른 사용자의 비공개 객체 404, 버전 충돌 409, Job 제한 429.
 - `/health/live`만 비인증입니다. `/health/ready`는 인증 후 DB 상태를 확인합니다. 내부 서비스 상태는 관리자 연결 검사로 별도 확인합니다.
+- `GET /me`는 `{id, name, role, email, group}`을 반환합니다. oauth2-proxy 모드의 `name`은 preferred username, `email`은 이메일 헤더, `group`은 그룹 목록의 첫 값입니다. 이메일·그룹이 없거나 다른 인증 모드이면 해당 값은 `null`입니다. 설정은 [관리자 안내](admin-guide.md#oauth2-proxy-연동)를 참고하세요.
 
 ## 생성 → 조회 → 편집 → 확정
 

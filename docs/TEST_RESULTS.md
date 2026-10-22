@@ -35,3 +35,11 @@
 비차단 경고: 최신 Starlette TestClient가 httpx 대신 httpx2로의 향후 이동을 권고하는 deprecation warning 1건. 테스트는 성공했습니다.
 
 실제 GHES/내부 LLM/SSO/TLS/egress, 운영 부하·백업 복구, 3~5명 수작업 사실성 비교는 미실시입니다. 내부 자격증명은 사용하지 않았습니다. 후속 범위는 KNOWN_LIMITATIONS.md를 참고하세요.
+
+## oauth2-proxy 지원 — 2026-10-22
+
+- Backend: **96 passed, 1 skipped**. 이번 실행은 `POSTGRES_TEST_URL` 없이 SQLite로 검증하여 PostgreSQL 전용 테스트 1건을 건너뛰었습니다.
+- 인증 회귀: 기본/변경된 헤더 이름, 사용자명·이메일·첫 그룹 추출, 여러 그룹·빈 목록·문자열 목록 형식, 메타데이터 변경, 미신뢰 TCP peer와 전달 IP 위조, 필수 사용자명 누락·중복 헤더·잘못된 목록 거부, 비활성 사용자, 기존 HMAC/단일 사용자 모드를 확인했습니다.
+- oauth2-proxy 사용자로 저장소 ACL·관리자 제한·worker 보고서 생성·IDOR 차단·권한 회수를 검증했습니다.
+- Ruff check/format, mypy (26 modules), nginx `-t`: 통과했습니다. nginx 검사는 기존 로컬 web 이미지에 변경한 설정을 마운트한 임시 컨테이너에서 실행했습니다.
+- 실제 oauth2-proxy/IdP 로그인과 사내 배포 연결은 실행하지 않았습니다.

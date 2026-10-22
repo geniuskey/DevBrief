@@ -28,6 +28,8 @@ http://localhost:5173 에서 `alice, bob, carol`, `2026-10-12 ~ 2026-10-18`로 �
 
 설정은 `backend/.env`에 루트 `.env.example`을 복사해 조정하거나 환경변수로 제공합니다. 비밀은 파일로만 전달합니다. 운영 설정 및 검증 기록은 `docs/`를 참고하세요.
 
+oauth2-proxy 연동은 `SINGLE_USER_MODE=false`, `PROXY_AUTH_MODE=oauth2_proxy`, `TRUSTED_PROXY_IPS`로 활성화합니다. 사용자명·이메일·그룹 헤더를 읽고 그룹 목록의 첫 값을 사용합니다. 헤더 이름과 프록시 배치는 [관리자 안내](docs/admin-guide.md#oauth2-proxy-연동)를 참고하세요.
+
 ## 검증
 
 ```sh

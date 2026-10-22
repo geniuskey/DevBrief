@@ -60,6 +60,13 @@ def test_signed_proxy_acl_idor_and_revocation(tmp_path):
         assert client.get("/api/v1/me", headers={"X-User": "admin"}).status_code == 401
         assert (
             client.get(
+                "/api/v1/me",
+                headers={"X-Forwarded-Preferred-Username": "admin", "X-Forwarded-Email": "admin@example.com"},
+            ).status_code
+            == 401
+        )
+        assert (
+            client.get(
                 "/api/v1/me", headers=headers("alice", "GET", "/api/v1/me", int(time.time()) - 120)
             ).status_code
             == 401

@@ -1,3 +1,4 @@
+import ast
 import hashlib
 import hmac
 import ipaddress
@@ -70,6 +71,39 @@ class Principal:
     id: str
     name: str
     role: str
+    email: str | None = None
+    group: str | None = None
+
+
+def oauth2_proxy_header(request: Request, name: str, limit: int) -> str:
+    values = request.headers.getlist(name)
+    if len(values) > 1:
+        raise AppError("UNAUTHENTICATED", "중복된 oauth2-proxy 인증 헤더입니다", 401)
+    value = values[0] if values else ""
+    if len(value) > limit or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise AppError("UNAUTHENTICATED", "oauth2-proxy 인증 헤더가 올바르지 않습니다", 401)
+    return value.strip()
+
+
+def oauth2_proxy_group(value: str) -> str | None:
+    if value.startswith("["):
+        try:
+            try:
+                groups = json.loads(value)
+            except json.JSONDecodeError:
+                # Some SSO gateways serialize a Python-style list with single quotes.
+                groups = ast.literal_eval(value)
+            if not isinstance(groups, list) or any(not isinstance(g, str) for g in groups):
+                raise ValueError
+        except (ValueError, SyntaxError, RecursionError) as exc:
+            raise AppError("UNAUTHENTICATED", "oauth2-proxy 그룹 목록이 올바르지 않습니다", 401) from exc
+    else:
+        # Also accept the comma-separated header emitted by oauth2-proxy itself.
+        groups = value.split(",")
+    group = groups[0].strip() if groups else ""
+    if any(ord(c) < 32 or ord(c) == 127 for c in group):
+        raise AppError("UNAUTHENTICATED", "oauth2-proxy 그룹 값이 올바르지 않습니다", 401)
+    return group or None
 
 
 def insert_if_absent(db, model, values: dict, unique_column: str):
@@ -82,6 +116,7 @@ def insert_if_absent(db, model, values: dict, unique_column: str):
 
 def authenticate(request: Request, db, settings: Settings) -> Principal:
     host = request.client.host if request.client else ""
+    email = group = None
     if settings.single_user_mode:
         try:
             local = ipaddress.ip_address(host).is_loopback
@@ -91,22 +126,34 @@ def authenticate(request: Request, db, settings: Settings) -> Principal:
             raise AppError("LOCAL_ONLY", "단일 사용자 모드는 localhost 접속만 허용합니다", 403)
         principal = settings.single_user_principal
     else:
-        trusted = {s.strip() for s in settings.trusted_proxy_ips.split(",")}
-        principal = request.headers.get("x-devbrief-user", "")
-        timestamp = request.headers.get("x-devbrief-timestamp", "")
-        signature = request.headers.get("x-devbrief-signature", "")
-        if host not in trusted or not re.fullmatch(r"[A-Za-z0-9@._+-]{1,200}", principal):
+        trusted = {s.strip() for s in settings.trusted_proxy_ips.split(",") if s.strip()}
+        if host not in trusted:
             raise AppError("UNAUTHENTICATED", "인증된 프록시 접속이 필요합니다", 401)
-        try:
-            fresh = abs(time.time() - int(timestamp)) <= 60
-        except ValueError:
-            fresh = False
-        signed = f"{timestamp}\n{principal}\n{request.method}\n{request.url.path}"
-        expected = hmac.new(
-            settings.secret("proxy_secret_file").encode(), signed.encode(), hashlib.sha256
-        ).hexdigest()
-        if not fresh or not hmac.compare_digest(signature, expected):
-            raise AppError("UNAUTHENTICATED", "프록시 인증 서명이 올바르지 않습니다", 401)
+        principal = (
+            oauth2_proxy_header(request, settings.oauth2_proxy_preferred_username_header, 200)
+            if settings.proxy_auth_mode == "oauth2_proxy"
+            else request.headers.get("x-devbrief-user", "")
+        )
+        if not re.fullmatch(r"[A-Za-z0-9@._+-]{1,200}", principal):
+            raise AppError("UNAUTHENTICATED", "인증된 프록시 접속이 필요합니다", 401)
+        if settings.proxy_auth_mode == "oauth2_proxy":
+            email = oauth2_proxy_header(request, settings.oauth2_proxy_email_header, 254) or None
+            group = oauth2_proxy_group(
+                oauth2_proxy_header(request, settings.oauth2_proxy_groups_header, 8192)
+            )
+        else:
+            timestamp = request.headers.get("x-devbrief-timestamp", "")
+            signature = request.headers.get("x-devbrief-signature", "")
+            try:
+                fresh = abs(time.time() - int(timestamp)) <= 60
+            except ValueError:
+                fresh = False
+            signed = f"{timestamp}\n{principal}\n{request.method}\n{request.url.path}"
+            expected = hmac.new(
+                settings.secret("proxy_secret_file").encode(), signed.encode(), hashlib.sha256
+            ).hexdigest()
+            if not fresh or not hmac.compare_digest(signature, expected):
+                raise AppError("UNAUTHENTICATED", "프록시 인증 서명이 올바르지 않습니다", 401)
     role = "admin" if principal in {s.strip() for s in settings.admin_principals.split(",")} else "author"
     user = db.scalar(select(AppUser).where(AppUser.principal == principal))
     if user is None:
@@ -117,7 +164,7 @@ def authenticate(request: Request, db, settings: Settings) -> Principal:
         user = db.scalar(select(AppUser).where(AppUser.principal == principal))
     if not user.active:
         raise AppError("FORBIDDEN", "비활성 사용자입니다", 403)
-    return Principal(user.id, principal, role)
+    return Principal(user.id, principal, role, email=email, group=group)
 
 
 def permitted_repositories(db, principal: Principal, settings: Settings) -> list[Repository]:

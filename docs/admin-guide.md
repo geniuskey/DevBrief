@@ -24,12 +24,55 @@ SQLite는 한 호스트에서 worker 한 개만 실행합니다. 파일 잠금�
 
 - 기본 `SINGLE_USER_MODE=true`: 실제 TCP peer가 loopback일 때만 허용합니다. Uvicorn은 `--no-proxy-headers`로 실행하여 브라우저의 X-Forwarded-For를 신뢰하지 않습니다. 개발 Vite 서버도 127.0.0.1에만 바인딩합니다.
 - Compose 데모는 web과 API의 network namespace를 공유합니다. API는 127.0.0.1:8000, 공개 포트는 호스트 127.0.0.1:8080입니다. PoC를 임의로 0.0.0.0에 노출하지 마세요.
-- 다중 사용자: `SINGLE_USER_MODE=false`, `TRUSTED_PROXY_IPS`에 실제 인증 프록시 TCP 주소, `PROXY_SECRET_FILE`에 최소 32자 이상 무작위 HMAC secret 경로를 지정합니다. 프록시는 SSO 검증을 마친 사용자의 헤더만 생성하고 클라이언트가 보낸 동일 헤더는 반드시 제거해야 합니다.
+- 다중 사용자: `SINGLE_USER_MODE=false`, `TRUSTED_PROXY_IPS`에 API에 직접 접속하는 신뢰 프록시의 실제 TCP IP 주소를 쉼표로 구분해 지정합니다. 프록시는 SSO 검증을 마친 사용자의 헤더만 생성하고 클라이언트가 보낸 동일 헤더는 반드시 제거해야 합니다. 모든 모드에서 Uvicorn의 `--no-proxy-headers`를 유지합니다.
+- 기본 `PROXY_AUTH_MODE=signed`: `PROXY_SECRET_FILE`에 최소 32자 이상 무작위 HMAC secret 경로를 지정합니다. oauth2-proxy 연동은 아래 별도 모드를 사용합니다.
 - 헤더: `X-DevBrief-User`, `X-DevBrief-Timestamp`(Unix 초), `X-DevBrief-Signature`(SHA256 HMAC hex).
 - 서명 원문은 `timestamp + "\n" + principal + "\n" + HTTP_METHOD + "\n" + path`입니다. path는 query string을 제외한 `/api/v1/...`입니다. ±60초만 허용합니다. 프록시와 API 사이에는 격리 네트워크/TLS가 필요합니다. 서명은 SSO 검증을 대신하지 않습니다.
 - `ADMIN_PRINCIPALS`는 쉼표로 구분합니다. 일반 사용자는 `REPO_ACL_JSON={"alice@example.com":["example-org/vision"]}`처럼 명시한 repo만 봅니다. 설정되지 않은 사용자는 repo 권한이 없습니다. 관리자는 allowlist 내 전체 저장소에 접근합니다.
 - 일반 사용자의 보고서·팀은 소유자만 접근합니다. 팀 리더 공유 ACL은 후속 범위입니다. 모든 보고서 읽기·편집·확정·다운로드와 Job 조회에서 현재 repo 권한을 다시 확인합니다. 권한 회수 후 과거 보고서도 숨겨집니다.
-- `PUBLIC_ORIGIN`은 브라우저의 정확한 scheme/host/port로 설정합니다. 외부 Origin의 변경 요청을 거부하고 Host도 제한합니다. nginx 배포 예시는 PoC 전용으로 인증 헤더를 제거합니다. 운영 프록시에는 위 서명 통합을 추가해야 합니다.
+- `PUBLIC_ORIGIN`은 브라우저의 정확한 scheme/host/port로 설정합니다. 외부 Origin의 변경 요청을 거부하고 Host도 제한합니다. nginx 배포 예시는 PoC 전용으로 인증 헤더를 제거합니다. 운영 프록시에는 선택한 인증 모드에 맞는 헤더 전달을 구성해야 합니다.
+
+### oauth2-proxy 연동
+
+DevBrief API와 worker의 환경변수 또는 `backend/.env`에 다음을 설정합니다. 아래 세 `OAUTH2_PROXY_*_HEADER` 변수는 **DevBrief가 읽을 헤더 이름**이며 표시된 값이 기본값입니다.
+
+```dotenv
+SINGLE_USER_MODE=false
+PROXY_AUTH_MODE=oauth2_proxy
+TRUSTED_PROXY_IPS=127.0.0.1
+PUBLIC_ORIGIN=https://devbrief.internal.example
+OAUTH2_PROXY_PREFERRED_USERNAME_HEADER=X-Forwarded-Preferred-Username
+OAUTH2_PROXY_EMAIL_HEADER=X-Forwarded-Email
+OAUTH2_PROXY_GROUPS_HEADER=X-Forwarded-Groups
+ADMIN_PRINCIPALS=admin
+REPO_ACL_JSON={"alice":["example-org/vision"]}
+```
+
+`TRUSTED_PROXY_IPS`는 배치에 맞게 변경합니다. 이 모드는 HMAC secret이나 `X-DevBrief-*` 서명을 요구하지 않으며, 신뢰한 프록시의 실제 접속 IP에서 받은 SSO 헤더를 사용합니다. API와 중간 nginx에 사용자가 직접 접근할 수 없도록 네트워크를 제한하고, 프록시에서 클라이언트의 인증 헤더를 제거한 뒤 검증된 값으로 덮어씁니다.
+
+| 입력 헤더 | 사용 값 |
+| --- | --- |
+| `X-Forwarded-Preferred-Username` | 필수 사용자 식별자. `/api/v1/me`의 `name`, 관리자 목록과 저장소 ACL의 키로 사용합니다. 기존 principal과 동일하게 영문·숫자·`@._+-`, 1~200자를 허용합니다. |
+| `X-Forwarded-Email` | `/api/v1/me`의 `email`. 없거나 비어 있으면 `null`입니다. |
+| `X-Forwarded-Groups` | 목록의 첫 항목을 `/api/v1/me`의 `group`으로 제공합니다. `[]` 또는 헤더가 없으면 `null`입니다. |
+
+그룹은 `["engineering", "platform"]` 또는 `['engineering', 'platform']`이면 `engineering`을 사용합니다. 쉼표로 구분한 `engineering,platform`과 단일 값도 지원합니다. 잘못된 목록과 중복 인증 헤더는 401로 거부합니다. 이메일·그룹은 매 요청의 검증된 헤더에서 읽으며 DB에 추가 저장하지 않습니다. 앱 권한은 `ADMIN_PRINCIPALS`와 사용자명 기준 `REPO_ACL_JSON`으로 결정하므로 그룹 이름이 `admin`이어도 자동 승격되지 않습니다.
+
+oauth2-proxy가 직접 upstream으로 요청을 보내는 구성에서는 `--pass-user-headers=true`로 세 헤더를 전달합니다. nginx `auth_request` 구성의 `--set-xauthrequest=true`는 `X-Auth-Request-*` 응답 헤더를 생성하므로 nginx에서 위 `X-Forwarded-*` 요청 헤더로 매핑하거나 DevBrief 헤더 이름을 변경해야 합니다. 옵션은 [oauth2-proxy 공식 헤더 설정](https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview/#header-options)을 참고하세요.
+
+`브라우저 → oauth2-proxy → nginx → API`로 배치할 때는 oauth2-proxy에서만 접근 가능한 nginx에 아래 `/api/` location을 사용합니다. `TRUSTED_PROXY_IPS`에는 API에 직접 접속하는 nginx의 IP를 지정합니다. 아래 예시의 기본 헤더 이름을 변경했다면 전달 설정도 함께 맞춥니다.
+
+```nginx
+location /api/ {
+  proxy_pass http://127.0.0.1:8000;
+  proxy_set_header Host $host;
+  proxy_set_header X-Forwarded-Preferred-Username $http_x_forwarded_preferred_username;
+  proxy_set_header X-Forwarded-Email $http_x_forwarded_email;
+  proxy_set_header X-Forwarded-Groups $http_x_forwarded_groups;
+}
+```
+
+기본 `deploy/compose.yaml`은 단일 사용자 데모 설정을 고정하며 `deploy/env.example`을 자동 적용하지 않습니다. oauth2-proxy 배포에서는 위 환경변수를 API·worker에 전달하는 별도 Compose override 또는 배포 정의와 nginx 설정을 사용하세요.
 
 ## Job 및 장애 복구
 
