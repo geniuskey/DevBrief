@@ -27,15 +27,25 @@ jobs:
         working-directory: frontend
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
+      # Run from .venv directly: long-lived `uv run` processes hold uv's cache lock,
+      # which makes setup-uv's post-job `uv cache prune` time out after 300s.
       - name: Start demo services
         run: |
           cd backend
-          PUBLIC_ORIGIN=http://127.0.0.1:5174 uv run uvicorn app.main:app --host 127.0.0.1 --no-proxy-headers > /tmp/devbrief-api.log 2>&1 &
-          uv run python -m app.worker.runner > /tmp/devbrief-worker.log 2>&1 &
+          PUBLIC_ORIGIN=http://127.0.0.1:5174 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --no-proxy-headers > /tmp/devbrief-api.log 2>&1 &
+          echo $! > /tmp/devbrief.pids
+          .venv/bin/python -m app.worker.runner > /tmp/devbrief-worker.log 2>&1 &
+          echo $! >> /tmp/devbrief.pids
           cd ../frontend
           npm run dev -- --port 5174 --strictPort > /tmp/devbrief-ui.log 2>&1 &
+          echo $! >> /tmp/devbrief.pids
       - run: npm run test:e2e
         working-directory: frontend
+      - name: Stop demo services
+        if: always()
+        run: |
+          [ -f /tmp/devbrief.pids ] && xargs kill < /tmp/devbrief.pids 2>/dev/null || true
+          tail -n 50 /tmp/devbrief-api.log /tmp/devbrief-worker.log 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: failure()
         with: {name: browser-traces, path: frontend/test-results}
