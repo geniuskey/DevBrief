@@ -28,7 +28,7 @@ Content-Type: application/json
 - `GET /me`, `/settings/capabilities`, `/repositories?org=&q=`, `/github/users?q=정확한ID`(없는 ID는 빈 목록). 보고서 요청의 일부 ID가 없으면 `USER_NOT_FOUND` 경고로 건너뛰고, 모든 ID가 없을 때만 작업이 실패합니다.
 - `GET /organizations`: 조직 전체로 선택할 수 있는 조직과 현재 알려진 저장소 수.
 - `GET/POST /teams`, `GET/PUT/DELETE /teams/{id}`. 팀도 `repository_ids`와 `organizations`를 가집니다. 생성한 Job은 팀 구성의 입력 스냅샷을 유지합니다.
-- `GET /reports?team_id=&from=YYYY-MM-DD&to=YYYY-MM-DD`: 권한 내 최근 최대 500건에서 필터링합니다. 각 항목은 `type`, `github_logins`, `repository_count`, 포함 업무 수 `work_item_count`, `team_name`, `finalized_at`을 함께 반환합니다.
+- `GET /reports?team_id=&from=YYYY-MM-DD&to=YYYY-MM-DD`: 권한·기간 필터를 적용한 뒤 최근 최대 500건을 반환합니다. 각 항목은 `type`, `github_logins`, `repository_count`, 포함 업무 수 `work_item_count`, `team_name`, `finalized_at`을 함께 반환합니다.
 - `POST /jobs/{id}/cancel`: queued/running만 취소합니다. 종료된 작업은 409입니다.
 - `POST /admin/connections/ghes/test`, `/admin/connections/llm/test`. GHES 검사는 `owner/*` 조직 접근 결과도 반환합니다.
 - `POST /admin/organizations/sync`: `owner/*` 조직의 저장소 목록을 즉시 갱신합니다.

@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import App from "./App";
 import { ApiError, api, isNotFound, safeEvidenceUrl } from "./api/client";
 import { Button } from "./components/ui";
-import { periodPresets, scopeLabel } from "./lib/format";
+import { csvCell, periodPresets, scopeLabel } from "./lib/format";
 import { Markdown } from "./lib/markdown";
 
 function stubApi(role = "admin") {
@@ -157,4 +157,10 @@ test("scope label counts repositories without ids", () => {
     "조직 org 전체",
   );
   expect(scopeLabel({ repository_count: 2 })).toBe("저장소 2개");
+});
+
+test("csv cells neutralise spreadsheet formulas", () => {
+  expect(csvCell('=HYPERLINK("x")')).toBe(`"'=HYPERLINK(""x"")"`);
+  expect(csvCell("-1+2")).toBe(`"'-1+2"`);
+  expect(csvCell("alice")).toBe(`"alice"`);
 });

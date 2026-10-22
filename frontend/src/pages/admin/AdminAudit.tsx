@@ -9,11 +9,9 @@ import {
   PageHeader,
   Skeleton,
 } from "../../components/ui";
-import { fullDateTime } from "../../lib/format";
+import { csvCell, fullDateTime } from "../../lib/format";
 import { actionLabel } from "./types";
 import type { Audit } from "./types";
-
-const csvCell = (v: string) => `"${v.replace(/"/g, '""')}"`;
 
 export default function AdminAudit() {
   const toast = useToast();

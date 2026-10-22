@@ -175,7 +175,9 @@ def register_routes(app, settings, db_session, principal, visible_report):
             stmt = stmt.where(Report.team_id == team_id)
         permits = scope_checker(db, user, settings)
         rows = []
-        for report, job in db.execute(stmt.limit(500)):
+        # Scope and period live in the request JSON, so filter while streaming and stop
+        # at 500 matches; a SQL LIMIT before filtering would hide older matching reports.
+        for report, job in db.execute(stmt.execution_options(yield_per=200)):
             req = job.request_json
             if not permits(req["repository_ids"], req.get("organizations")):
                 continue
@@ -184,6 +186,8 @@ def register_routes(app, settings, db_session, principal, visible_report):
             if to_date and req["start_date"] > to_date.isoformat():
                 continue
             rows.append((report, req))
+            if len(rows) == 500:
+                break
         ids = [report.id for report, _ in rows]
         item_counts = dict(
             db.execute(

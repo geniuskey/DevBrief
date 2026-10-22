@@ -13,6 +13,11 @@ export function scopeLabel(scope: {
   if (repos || !orgs.length) parts.push(`저장소 ${repos}개`);
   return parts.join(" + ");
 }
+// Spreadsheets evaluate cells starting with = + - @ (or tab/CR) as formulas; a
+// principal or target like "=HYPERLINK(...)" must stay plain text when opened.
+export const csvCell = (v: string) =>
+  `"${(/^[=+\-@\t\r]/.test(v) ? `'${v}` : v).replace(/"/g, '""')}"`;
+
 const DAY = 86400000;
 
 export const kstDate = (d: Date = new Date()) =>

@@ -147,10 +147,13 @@ export default function ReportPage({ reportId }: { reportId: string }) {
   async function saveItem(item: WorkItem, patch: Record<string, unknown>) {
     setBusy(true);
     try {
-      await api(`/reports/${report!.id}/work-items/${item.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ version: item.version, ...patch }),
-      });
+      await api(
+        `/reports/${encodeURIComponent(report!.id)}/work-items/${encodeURIComponent(item.id)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ version: item.version, ...patch }),
+        },
+      );
       setReviewed(false);
       await load();
       toast.success(
@@ -173,7 +176,7 @@ export default function ReportPage({ reportId }: { reportId: string }) {
   async function finalize() {
     setBusy(true);
     try {
-      await api(`/reports/${report!.id}/finalize`, {
+      await api(`/reports/${encodeURIComponent(report!.id)}/finalize`, {
         method: "POST",
         body: JSON.stringify({ revision: report!.revision }),
       });

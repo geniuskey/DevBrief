@@ -38,18 +38,21 @@ export default function TeamsPage() {
     if (!draft) return;
     setBusy(true);
     try {
-      await api(draft.id ? `/teams/${draft.id}` : "/teams", {
-        method: draft.id ? "PUT" : "POST",
-        body: JSON.stringify({
-          name: draft.name.trim(),
-          github_logins: draft.logins,
-          // Repositories inside a whole-org scope are collected anyway.
-          repository_ids: draft.repos.filter(
-            (id) => !draft.orgs.includes(repoOrg(repoName(id))),
-          ),
-          organizations: draft.orgs,
-        }),
-      });
+      await api(
+        draft.id ? `/teams/${encodeURIComponent(draft.id)}` : "/teams",
+        {
+          method: draft.id ? "PUT" : "POST",
+          body: JSON.stringify({
+            name: draft.name.trim(),
+            github_logins: draft.logins,
+            // Repositories inside a whole-org scope are collected anyway.
+            repository_ids: draft.repos.filter(
+              (id) => !draft.orgs.includes(repoOrg(repoName(id))),
+            ),
+            organizations: draft.orgs,
+          }),
+        },
+      );
       await reloadTeams();
       toast.success(
         draft.id ? "팀 정보를 수정했습니다." : "팀을 만들었습니다.",
@@ -66,7 +69,9 @@ export default function TeamsPage() {
     if (!removing) return;
     setBusy(true);
     try {
-      await api(`/teams/${removing.id}`, { method: "DELETE" });
+      await api(`/teams/${encodeURIComponent(removing.id)}`, {
+        method: "DELETE",
+      });
       await reloadTeams();
       toast.success(`'${removing.name}' 팀을 삭제했습니다.`);
       setRemoving(null);
