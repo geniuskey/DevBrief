@@ -1,4 +1,4 @@
-from app.models.entities import Commit, CommitPRLink, GitHubEvent, PullRequest, Review, SyncRun
+from app.models.entities import Commit, CommitPRLink, GitHubEvent, PullRequest, Review, SyncRun, utcnow
 
 
 def store_collection(db, job_id, request, collection):
@@ -23,6 +23,7 @@ def store_collection(db, job_id, request, collection):
         (Review, collection.reviews),
     ]:
         for entry in entries.values():
-            db.merge(model(**entry))
+            values = {**entry, "cached_at": utcnow()} if model is PullRequest else entry
+            db.merge(model(**values))
     for repo, sha, number in collection.links:
         db.merge(CommitPRLink(repo_id=repo, sha=sha, pr_number=number))

@@ -42,7 +42,14 @@ def redact(value: str, secrets: tuple[str, ...] = ()) -> str:
 
 def validated_url(url: str, base: str, api: bool = True) -> str:
     u, b = urlsplit(url), urlsplit(base)
-    decoded = unquote(u.path)
+    decoded = u.path
+    for _ in range(4):
+        decoded_next = unquote(decoded)
+        if decoded_next == decoded:
+            break
+        decoded = decoded_next
+    if "%" in decoded:
+        raise AppError("UNSAFE_URL", "중첩 URL 인코딩은 허용되지 않습니다", 502)
     if (
         u.scheme != "https"
         or u.netloc != b.netloc
@@ -53,7 +60,7 @@ def validated_url(url: str, base: str, api: bool = True) -> str:
         or any(ord(c) < 32 for c in url)
     ):
         raise AppError("UNSAFE_URL", "허용되지 않은 외부 URL입니다", 502)
-    if api and not (u.path == b.path.rstrip("/") or u.path.startswith(b.path.rstrip("/") + "/")):
+    if api and not (decoded == b.path.rstrip("/") or decoded.startswith(b.path.rstrip("/") + "/")):
         raise AppError("UNSAFE_URL", "허용 API 경로를 벗어났습니다", 502)
     return url
 
@@ -63,6 +70,14 @@ class Principal:
     id: str
     name: str
     role: str
+
+
+def insert_if_absent(db, model, values: dict, unique_column: str):
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    insert_fn = pg_insert if db.bind.dialect.name == "postgresql" else sqlite_insert
+    db.execute(insert_fn(model).values(**values).on_conflict_do_nothing(index_elements=[unique_column]))
 
 
 def authenticate(request: Request, db, settings: Settings) -> Principal:
@@ -95,9 +110,11 @@ def authenticate(request: Request, db, settings: Settings) -> Principal:
     role = "admin" if principal in {s.strip() for s in settings.admin_principals.split(",")} else "author"
     user = db.scalar(select(AppUser).where(AppUser.principal == principal))
     if user is None:
-        user = AppUser(principal=principal, display_name=principal, role=role)
-        db.add(user)
+        insert_if_absent(
+            db, AppUser, {"principal": principal, "display_name": principal, "role": role}, "principal"
+        )
         db.commit()
+        user = db.scalar(select(AppUser).where(AppUser.principal == principal))
     if not user.active:
         raise AppError("FORBIDDEN", "비활성 사용자입니다", 403)
     return Principal(user.id, principal, role)
@@ -128,5 +145,5 @@ def seed_repositories(db, settings: Settings):
     existing = set(db.scalars(select(Repository.full_name)))
     for name in settings.allowed_repos:
         if name not in existing:
-            db.add(Repository(full_name=name))
+            insert_if_absent(db, Repository, {"full_name": name}, "full_name")
     db.commit()

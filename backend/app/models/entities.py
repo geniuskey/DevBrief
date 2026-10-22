@@ -116,6 +116,7 @@ class Commit(Base):
 
 class PullRequest(Base):
     __tablename__ = "pull_requests"
+    cached_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     repo_id: Mapped[str] = mapped_column(ForeignKey("repositories.id", ondelete="CASCADE"), primary_key=True)
     number: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(Text)

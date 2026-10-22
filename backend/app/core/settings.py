@@ -69,6 +69,8 @@ class Settings(BaseSettings):
             raise ValueError("수집 및 보관 제한은 양수여야 합니다")
         if not self.single_user_mode and (not self.trusted_proxy_ips or not self.proxy_secret_file):
             raise ValueError("다중 사용자 모드에는 신뢰 프록시와 서명 secret 파일이 필요합니다")
+        if not self.single_user_mode and len(self.secret("proxy_secret_file")) < 32:
+            raise ValueError("프록시 서명 secret은 최소 32자여야 합니다")
         if self.adapter_mode == "real":
             approved = {h.strip().lower() for h in self.approved_egress_hosts.split(",")}
             for value in (self.ghes_base_url, self.ghes_api_base_url, self.llm_base_url):

@@ -1,15 +1,18 @@
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import select, text
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.db import make_engine, session_factory
 from app.core.security import AppError, audit, authenticate, permitted_repositories, seed_repositories
 from app.core.settings import Settings, get_settings
-from app.models.entities import Job, Report, WorkItem
+from app.models.entities import Job, Report, Team, WorkItem
 from app.schemas.contracts import ReportRequest
 
 
@@ -17,6 +20,9 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
     settings = settings or get_settings()
     engine = engine or make_engine(settings.database_url)
     factory = session_factory(engine)
+    from app.core.logging import configure_logging
+
+    configure_logging(settings)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -29,10 +35,20 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
         title="DevBrief",
         version="0.1.0",
         lifespan=lifespan,
-        docs_url="/api/docs",
-        openapi_url="/api/openapi.json",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
     app.state.settings, app.state.factory = settings, factory
+    allowed_hosts = [
+        urlsplit(settings.public_origin).hostname or "localhost",
+        "localhost",
+        "127.0.0.1",
+        "[::1]",
+    ]
+    if settings.adapter_mode == "fake":
+        allowed_hosts.append("testserver")
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
     @app.middleware("http")
     async def boundary(request: Request, call_next):
@@ -49,7 +65,18 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
                 status_code=403,
             )
         else:
-            response = await call_next(request)
+            try:
+                response = await call_next(request)
+            except Exception:
+                response = JSONResponse(
+                    {
+                        "code": "INTERNAL_ERROR",
+                        "message_ko": "서버 처리 중 오류가 발생했습니다",
+                        "request_id": request.state.request_id,
+                        "details_safe": {},
+                    },
+                    status_code=500,
+                )
         response.headers["X-Request-ID"] = request.state.request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -67,6 +94,18 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
                 "details_safe": {},
             },
             status_code=exc.status,
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, exc):
+        return JSONResponse(
+            {
+                "code": f"HTTP_{exc.status_code}",
+                "message_ko": "요청 경로나 메서드를 확인하세요",
+                "request_id": request.state.request_id,
+                "details_safe": {},
+            },
+            status_code=exc.status_code,
         )
 
     @app.exception_handler(RequestValidationError)
@@ -97,6 +136,26 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
         if not set(job.request_json["repository_ids"]) <= allowed:
             raise AppError("NOT_FOUND", "보고서를 찾을 수 없습니다", 404)
         return report
+
+    @app.get("/api/openapi.json", include_in_schema=False)
+    def openapi_schema(user=Depends(principal)):
+        return app.openapi()
+
+    @app.get("/api/docs", include_in_schema=False, response_class=HTMLResponse)
+    def api_docs(user=Depends(principal)):
+        import html
+
+        rows = []
+        for path, methods in app.openapi()["paths"].items():
+            for method, spec in methods.items():
+                rows.append(
+                    f"<tr><td>{html.escape(method.upper())}</td><td>{html.escape(path)}</td><td>{html.escape(spec.get('summary', ''))}</td></tr>"
+                )
+        return (
+            '<!doctype html><html lang="ko"><meta charset="utf-8"><title>DevBrief API</title><body><h1>DevBrief API</h1><p>사내망에서 외부 CDN 없이 열람하는 API 목록입니다. 요청·응답 계약은 <a href="/api/openapi.json">OpenAPI JSON</a>을 참고하세요.</p><table><thead><tr><th>Method</th><th>Path</th><th>기능</th></tr></thead><tbody>'
+            + "".join(rows)
+            + "</tbody></table></body></html>"
+        )
 
     @app.get("/api/v1/health/live")
     def live():
@@ -134,6 +193,14 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
     @app.post("/api/v1/reports", status_code=202)
     def create_report(body: ReportRequest, user=Depends(principal), db=Depends(db_session)):
         allowed = {r.id for r in permitted_repositories(db, user, settings)}
+        if body.team_id:
+            team = db.get(Team, body.team_id)
+            if (
+                not team
+                or (team.created_by != user.id and user.role != "admin")
+                or not set(team.repository_ids) <= allowed
+            ):
+                raise AppError("NOT_FOUND", "팀을 찾을 수 없습니다", 404)
         if not set(body.repository_ids) <= allowed:
             raise AppError("REPO_FORBIDDEN", "허용되지 않은 저장소입니다", 403)
         pending = list(

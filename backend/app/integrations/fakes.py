@@ -133,7 +133,7 @@ class FakeLLM:
             "title_ko": "ROI 경계 오류 수정" if title == "ROI bounds fix" else title,
             "summary_ko": "ROI 경계 오류 수정과 관련 리팩터링·테스트 변경이 기록되었습니다."
             if title == "ROI bounds fix"
-            else "제공된 변경 내역을 검토했습니다.",
+            else f"{title} 관련 활동이 기록되었습니다.",
             "category": "개발",
             "status": data.get("status", "검증 필요"),
             "contributors": data.get("contributors", []),

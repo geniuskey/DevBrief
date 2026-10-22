@@ -83,3 +83,32 @@ def test_page_cap_is_visible():
     with pytest.raises(IntegrationError, match="최대 페이지"):
         list(client.pages("repos/example-org/vision/pulls/42/commits"))
     client.close()
+
+
+def test_more_than_100_pages_when_policy_allows():
+    def handler(request):
+        page = int(request.url.params.get("page", 1))
+        headers = (
+            {"link": f'<https://github.internal.example/api/v3/items?page={page + 1}>; rel="next"'}
+            if page < 101
+            else {}
+        )
+        return httpx.Response(200, json=[{"id": page}], headers=headers)
+
+    client = GHESClient(Settings(max_pages=101, _env_file=None), httpx.MockTransport(handler))
+    assert len(list(client.pages("items"))) == 101
+    client.close()
+
+
+def test_long_retry_after_is_not_ignored():
+    sleeps = []
+    client = GHESClient(
+        Settings(_env_file=None),
+        httpx.MockTransport(lambda _: httpx.Response(429, headers={"retry-after": "120"})),
+        sleep=sleeps.append,
+    )
+    with pytest.raises(IntegrationError) as error:
+        client.get("user")
+    assert error.value.code == "RATE_LIMITED"
+    assert sleeps == []
+    client.close()

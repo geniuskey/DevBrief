@@ -53,7 +53,7 @@ def collect(
         validated_url(url, client.settings.ghes_base_url, api=False)
         from urllib.parse import urlsplit
 
-        if not urlsplit(url).path.startswith("/" + repo.full_name + "/"):
+        if not urlsplit(url).path.lower().startswith("/" + repo.full_name.lower() + "/"):
             raise IntegrationError("UNSAFE_EVIDENCE_URL")
         # Encode markdown delimiters and whitespace, preserving the actual URL semantics.
         return quote(url, safe=":/?#=&%+@,;_~-.")

@@ -52,3 +52,15 @@ docker compose -f deploy/compose.yaml up --build
 ```
 
 http://localhost:8080 에서 접속합니다. PoC는 localhost로만 노출합니다. 운영에는 사내 TLS·인증 프록시·egress 제한이 필요합니다.
+
+문서: [관리자 안내](docs/admin-guide.md) · [API](docs/api.md) · [보안 검토](docs/security.md) · [검증 결과](docs/TEST_RESULTS.md) · [알려진 제한](docs/KNOWN_LIMITATIONS.md)
+
+브라우저 회귀 검증은 API의 `PUBLIC_ORIGIN=http://127.0.0.1:5174`, Vite의 `--port 5174 --strictPort`로 세 프로세스를 시작한 뒤 실행합니다.
+
+```sh
+cd frontend
+npx playwright install chromium
+npm run test:e2e
+```
+
+기본 데모는 API/worker 분리 실행이 필요합니다. 내부 서버 연동과 시범 운영은 관리자 안내의 설치 환경 검증을 거쳐야 합니다.

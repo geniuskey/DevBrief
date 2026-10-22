@@ -3,15 +3,39 @@ on: [push, pull_request]
 jobs:
   checks:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: {POSTGRES_PASSWORD: test-only, POSTGRES_DB: devbrief}
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-        with: {version: '0.10.9', python-version: '3.11'}
+        with: {version: '0.12.18', python-version: '3.11'}
       - uses: actions/setup-node@v4
         with: {node-version: '22', cache: npm, cache-dependency-path: frontend/package-lock.json}
       - run: uv sync --frozen
         working-directory: backend
-      - run: uv run pytest && uv run ruff check . && uv run mypy app && uv run alembic upgrade head && uv run alembic downgrade base && uv run alembic upgrade head
+      - run: uv run alembic upgrade head
         working-directory: backend
-      - run: npm ci && npm test && npm run lint && npm run build
+        env: {DATABASE_URL: 'postgresql+psycopg://postgres:test-only@localhost:5432/devbrief'}
+      - run: uv run pytest && uv run ruff check . && uv run ruff format --check . && uv run mypy app && uv run alembic upgrade head && uv run alembic downgrade base && uv run alembic upgrade head
+        working-directory: backend
+        env: {POSTGRES_TEST_URL: 'postgresql+psycopg://postgres:test-only@localhost:5432/devbrief'}
+      - run: npm ci && npm test && npm run lint && npm run format:check && npm run build
         working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - name: Start demo services
+        run: |
+          cd backend
+          PUBLIC_ORIGIN=http://127.0.0.1:5174 uv run uvicorn app.main:app --host 127.0.0.1 --no-proxy-headers > /tmp/devbrief-api.log 2>&1 &
+          uv run python -m app.worker.runner > /tmp/devbrief-worker.log 2>&1 &
+          cd ../frontend
+          npm run dev -- --port 5174 --strictPort > /tmp/devbrief-ui.log 2>&1 &
+      - run: npm run test:e2e
+        working-directory: frontend
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: {name: browser-traces, path: frontend/test-results}
