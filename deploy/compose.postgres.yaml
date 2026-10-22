@@ -1,0 +1,27 @@
+# Optional: run on PostgreSQL instead of SQLite (several API/worker instances, managed DB).
+#   export POSTGRES_PASSWORD='...'
+#   docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml up --build
+x-postgres-url: &postgres_url
+  DATABASE_URL: postgresql+psycopg://devbrief:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your local environment}@db/devbrief
+services:
+  db:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    environment:
+      POSTGRES_USER: devbrief
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your local environment}
+      POSTGRES_DB: devbrief
+    volumes: [pgdata:/var/lib/postgresql/data]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U devbrief]
+      interval: 5s
+      retries: 10
+  migrate:
+    environment: *postgres_url
+    depends_on: {db: {condition: service_healthy}}
+  api:
+    environment: *postgres_url
+  worker:
+    environment: *postgres_url
+volumes:
+  pgdata:

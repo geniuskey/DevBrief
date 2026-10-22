@@ -15,8 +15,12 @@ def make_engine(url: str):
     if url.startswith("sqlite"):
 
         @event.listens_for(engine, "connect")
-        def enable_foreign_keys(connection, _):
+        def configure_sqlite(connection, _):
             connection.execute("PRAGMA foreign_keys=ON")
+            if ":memory:" not in url:
+                # API and worker share the file: WAL lets reads proceed while the worker writes.
+                connection.execute("PRAGMA journal_mode=WAL")
+                connection.execute("PRAGMA synchronous=NORMAL")
 
     return engine
 

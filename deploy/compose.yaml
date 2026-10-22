@@ -1,25 +1,18 @@
 # Local PoC. API and UI share a network namespace so localhost-only auth is preserved.
 services:
-  db:
-    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
-    environment:
-      POSTGRES_USER: devbrief
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your local environment}
-      POSTGRES_DB: devbrief
-    volumes: [pgdata:/var/lib/postgresql/data]
-    healthcheck:
-      test: [CMD-SHELL, pg_isready -U devbrief]
-      interval: 5s
-      retries: 10
   migrate:
     build: {context: .., dockerfile: deploy/Dockerfile.backend}
     environment: &backend_env
-      DATABASE_URL: postgresql+psycopg://devbrief:${POSTGRES_PASSWORD}@db/devbrief
+      # One host, one worker: SQLite in a named volume shared by migrate/api/worker.
+      # PostgreSQL: add `-f deploy/compose.postgres.yaml`.
+      DATABASE_URL: sqlite:////data/devbrief.db
       ADAPTER_MODE: fake
       SINGLE_USER_MODE: 'true'
       PUBLIC_ORIGIN: http://localhost:8080
     command: [alembic, upgrade, head]
-    depends_on: {db: {condition: service_healthy}}
+    volumes: [data:/data]
+    read_only: true
+    tmpfs: [/tmp]
   api:
     build: {context: .., dockerfile: deploy/Dockerfile.backend}
     environment: *backend_env
@@ -27,6 +20,7 @@ services:
     command: [uvicorn, app.main:app, --host, 127.0.0.1, --port, '8000', --no-proxy-headers]
     restart: unless-stopped
     depends_on: {migrate: {condition: service_completed_successfully}}
+    volumes: [data:/data]
     read_only: true
     tmpfs: [/tmp]
   worker:
@@ -35,6 +29,7 @@ services:
     command: [python, -m, app.worker.runner]
     restart: unless-stopped
     depends_on: {migrate: {condition: service_completed_successfully}}
+    volumes: [data:/data]
     read_only: true
     tmpfs: [/tmp]
   web:
@@ -45,4 +40,4 @@ services:
     read_only: true
     tmpfs: [/tmp, /var/cache/nginx, /var/run]
 volumes:
-  pgdata:
+  data:

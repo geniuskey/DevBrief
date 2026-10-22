@@ -55,11 +55,10 @@ npm run build
 ## Compose 데모
 
 ```sh
-export POSTGRES_PASSWORD='로컬에서-정한-비밀'
 docker compose -f deploy/compose.yaml up --build
 ```
 
-http://localhost:8080 에서 접속합니다. PoC는 localhost로만 노출합니다. 운영에는 사내 TLS·인증 프록시·egress 제한이 필요합니다.
+http://localhost:8080 에서 접속합니다. 기본 DB는 `data` 볼륨의 SQLite(`/data/devbrief.db`)입니다. PostgreSQL이 필요하면 `POSTGRES_PASSWORD`를 지정하고 `-f deploy/compose.postgres.yaml`을 추가합니다. PoC는 localhost로만 노출합니다. 운영에는 사내 TLS·인증 프록시·egress 제한이 필요합니다.
 
 문서: [관리자 안내](docs/admin-guide.md) · [API](docs/api.md) · [보안 검토](docs/security.md) · [검증 결과](docs/TEST_RESULTS.md) · [알려진 제한](docs/KNOWN_LIMITATIONS.md)
 

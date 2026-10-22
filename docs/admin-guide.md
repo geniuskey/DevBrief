@@ -4,7 +4,13 @@
 
 루트 README의 API·worker·frontend 세 프로세스를 실행합니다. Fake는 HTTP MockTransport로 실제 어댑터와 동일한 페이지네이션·오류·LLM 계약을 실행하며, 자격증명이나 외부 API가 필요 없습니다. 고정 데이터 기간은 2026-10-12~2026-10-18, 사용자는 alice/bob/carol입니다. vision은 PR 1건·커밋 3건·리뷰 1건, platform은 독립 커밋, restricted는 접근 실패를 제공합니다.
 
-SQLite는 한 호스트에서 worker 한 개만 실행합니다. 파일 잠금으로 중복 worker를 거부합니다. 다른 호스트에서 같은 SQLite 파일을 공유하면 안 됩니다. 운영은 PostgreSQL을 사용하세요.
+## 데이터베이스
+
+기본은 SQLite입니다. 수십 명 규모(한 호스트, worker 한 개)에는 SQLite로 충분합니다. API와 worker가 같은 파일을 쓰므로 WAL 모드로 열어 읽기가 worker 쓰기에 막히지 않게 합니다.
+
+- worker는 한 개만 실행합니다. 파일 잠금(`<db>.worker.lock`)으로 중복 worker를 거부합니다. 작업은 순서대로 처리됩니다.
+- DB 파일은 로컬 디스크(또는 Compose named volume)에 둡니다. NFS 같은 네트워크 파일시스템이나 여러 호스트에서 같은 파일을 공유하면 안 됩니다.
+- API/worker를 여러 대로 늘리거나 관리형 DB가 필요하면 PostgreSQL로 옮깁니다. `DATABASE_URL`만 바꾸면 되며, Compose는 `-f deploy/compose.postgres.yaml`을 추가합니다. 기존 SQLite 데이터는 자동 이전되지 않습니다.
 
 설정은 **backend 작업 디렉터리의 `.env`** 또는 프로세스 환경변수에서 읽습니다. `.env.example`에는 비밀이 없습니다. API와 worker에 동일한 설정을 적용하고 함께 재시작하세요.
 
@@ -101,10 +107,21 @@ uv run python -m app.worker.retention --execute
 
 첫 명령은 대상 개수만 확인합니다. `--execute`는 `RETENTION_DAYS`를 넘긴 원본 event payload, 커밋/리뷰/PR 캐시를 정리합니다. 보고서·수정 이력·감사 로그와 증거 URL은 남습니다. 이 자료의 조직별 보관·삭제 정책은 별도 운영 정책으로 정해야 합니다. 정기 실행은 cron/사내 scheduler에 위 명령을 등록하세요. 기본 배포는 자동 삭제를 예약하지 않습니다.
 
+SQLite는 실행 중에도 일관된 사본을 만드는 온라인 백업 명령을 사용합니다. 실행 중 DB 파일을 그냥 복사하면 WAL에 남은 변경이 빠지거나 깨진 사본이 생길 수 있습니다.
+
+```sh
+cd backend
+uv run python -m app.worker.backup backups/devbrief-$(date +%F).db
+# Compose
+docker compose -f deploy/compose.yaml exec worker python -m app.worker.backup /data/backups/devbrief-$(date +%F).db
+```
+
+복구는 API·worker를 멈춘 뒤 백업 파일을 `devbrief.db`로 되돌리고 같은 디렉터리의 `-wal`, `-shm` 파일을 지운 다음 다시 시작합니다. 백업은 볼륨 밖(사내 백업 저장소)으로도 옮겨 두고 cron/사내 scheduler로 정기 실행하세요.
+
 PostgreSQL은 사내 백업 시스템 또는 pg_dump/pg_restore로 백업·복구하고 secret을 백업 데이터와 분리합니다. 이 저장소에서 SQLite/PostgreSQL 마이그레이션 왕복을 검증했지만 운영 백업 복구 리허설은 설치 환경에서 해야 합니다.
 
 ## 패키지·컨테이너
 
 `uv.lock`, `requirements.lock`, `package-lock.json`으로 버전을 고정합니다. Python 변경 후 `uv export --no-dev --no-hashes --format requirements-txt --output-file requirements.lock`을 갱신하세요. uv 사내 미러는 `UV_DEFAULT_INDEX`, npm은 사내 registry 설정을 사용합니다. Docker 빌드 인자 `PIP_INDEX_URL`, `NPM_REGISTRY`, `PYTHON_IMAGE`, `NODE_IMAGE`, `NGINX_IMAGE`와 Compose `POSTGRES_IMAGE`로 승인 미러/이미지를 지정할 수 있습니다.
 
-Compose의 POSTGRES_PASSWORD는 데모 DB 설정용 환경변수입니다. 운영은 secret manager와 별도 배포 정의를 사용하세요. API/worker 컨테이너는 UID 10001 비루트이며 filesystem을 read-only로 실행합니다. 운영 TLS 종료와 SSO 프록시 설정은 조직별로 추가해야 합니다.
+`compose.postgres.yaml`의 POSTGRES_PASSWORD는 데모 DB 설정용 환경변수입니다. 운영은 secret manager와 별도 배포 정의를 사용하세요. API/worker 컨테이너는 UID 10001 비루트이며 filesystem을 read-only로 실행합니다. 운영 TLS 종료와 SSO 프록시 설정은 조직별로 추가해야 합니다.
