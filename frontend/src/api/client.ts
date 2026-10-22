@@ -21,3 +21,5 @@ export function safeEvidenceUrl(value: string): string | undefined {
     return undefined;
   }
 }
+export const errorMessage = (e: unknown) =>
+  e instanceof Error ? e.message : String(e);

@@ -240,3 +240,9 @@ def test_invalid_header_configuration_is_rejected(header):
             oauth2_proxy_preferred_username_header=header,
             _env_file=None,
         )
+
+
+def test_admin_endpoints_require_admin(oauth_client):
+    for path in ("/api/v1/admin/overview", "/api/v1/admin/jobs", "/api/v1/admin/users"):
+        assert oauth_client.get(path, headers=identity_headers("alice")).status_code == 403
+        assert oauth_client.get(path, headers=identity_headers("admin")).status_code == 200

@@ -25,10 +25,13 @@ Content-Type: application/json
 
 - `GET /me`, `/settings/capabilities`, `/repositories?org=&q=`, `/github/users?q=정확한ID`.
 - `GET/POST /teams`, `GET/PUT/DELETE /teams/{id}`. 생성한 Job은 팀 구성의 입력 스냅샷을 유지합니다.
-- `GET /reports?team_id=&from=YYYY-MM-DD&to=YYYY-MM-DD`: 권한 내 최근 최대 500건에서 필터링합니다.
+- `GET /reports?team_id=&from=YYYY-MM-DD&to=YYYY-MM-DD`: 권한 내 최근 최대 500건에서 필터링합니다. 각 항목은 `type`, `github_logins`, `repository_count`, 포함 업무 수 `work_item_count`, `team_name`, `finalized_at`을 함께 반환합니다.
 - `POST /jobs/{id}/cancel`: queued/running만 취소합니다. 종료된 작업은 409입니다.
 - `POST /admin/connections/ghes/test`, `/admin/connections/llm/test`.
 - `GET /admin/policy`: 비밀을 제외한 배포 정책. 정책 변경은 배포 설정에서 수행합니다.
 - `GET /admin/audit-logs?limit=100`: 관리자, 최대 500건.
+- `GET /admin/overview`: 관리자. 사용자·팀·보고서(초안/확정)·업무 수, Job 상태별 건수, `REPORT_TIMEZONE` 기준 최근 14일 일별 보고서 생성 수.
+- `GET /admin/jobs?status=&limit=100`: 관리자, 최대 500건. 요청자, 상태·단계·진행률, 오류 코드, 시도 횟수, 소요 시간, 요청 범위 요약(기간·인원·저장소 수)과 report_id.
+- `GET /admin/users`: 관리자. 등록 사용자, `ADMIN_PRINCIPALS` 기준 역할, 활성 여부, 보고서 수, 마지막 감사 기록 시각.
 
 PAT와 LLM key를 받거나 반환하는 API는 없습니다. 모든 응답과 설정은 metadata_only를 전제로 합니다.

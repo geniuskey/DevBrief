@@ -2,8 +2,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import App from "./App";
 import { safeEvidenceUrl } from "./api/client";
-afterEach(() => vi.unstubAllGlobals());
-test("renders Korean creation form with allowlisted repositories", async () => {
+import { periodPresets } from "./lib/format";
+import { Markdown } from "./lib/markdown";
+
+function stubApi(role = "admin") {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => ({
@@ -17,26 +19,87 @@ test("renders Korean creation form with allowlisted repositories", async () => {
                 access_state: "unverified",
               },
             ]
-          : url.endsWith("/teams")
+          : url.endsWith("/teams") || url.includes("/reports")
             ? []
             : url.endsWith("/me")
-              ? { role: "admin" }
-              : { adapter_mode: "fake" },
+              ? { id: "u1", name: "demo", role }
+              : {
+                  adapter_mode: "fake",
+                  demo_period: {
+                    start_date: "2026-10-12",
+                    end_date: "2026-10-18",
+                  },
+                },
     })),
   );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  window.location.hash = "";
+});
+
+test("renders the creation form with allowlisted repositories", async () => {
+  stubApi();
+  window.location.hash = "#/new";
   render(<App />);
   expect(
-    screen.getByRole("heading", { name: "개발 주간보고" }),
+    await screen.findByRole("heading", { name: "주간보고 만들기" }),
   ).toBeInTheDocument();
   await waitFor(() =>
     expect(screen.getByLabelText(/example-org\/vision/)).toBeChecked(),
   );
-  expect(screen.getByRole("button", { name: "주간보고 생성 →" })).toBeEnabled();
+  expect(screen.getByText("alice")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /주간보고 생성/ })).toBeEnabled();
 });
+
+test("home greets the user and links to the admin console for admins", async () => {
+  stubApi();
+  render(<App />);
+  expect(
+    await screen.findByRole("heading", { name: "안녕하세요, demo님" }),
+  ).toBeInTheDocument();
+  expect(
+    await screen.findByRole("link", { name: /관리자 콘솔/ }),
+  ).toHaveAttribute("href", "#/admin");
+});
+
+test("admin console is blocked for non-admins", async () => {
+  stubApi("author");
+  window.location.hash = "#/admin";
+  render(<App />);
+  expect(
+    await screen.findByRole("heading", { name: "관리자 권한이 필요합니다" }),
+  ).toBeInTheDocument();
+});
+
 test("rejects script and credential URLs", () => {
   expect(safeEvidenceUrl("javascript:alert(1)")).toBeUndefined();
   expect(safeEvidenceUrl("https://user:pass@evil.test/")).toBeUndefined();
   expect(
     safeEvidenceUrl("https://github.internal.example/org/repo/pull/1"),
   ).toMatch(/^https:/);
+});
+
+test("markdown renderer only links safe URLs and unescapes text", () => {
+  render(
+    <Markdown
+      source={
+        "# 제목\n\n- [PR 42](https://github.internal.example/pr/42)\n- [bad](javascript:alert(1))\n- example\\-org"
+      }
+    />,
+  );
+  expect(screen.getByRole("heading", { name: "제목" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "PR 42" })).toHaveAttribute(
+    "href",
+    "https://github.internal.example/pr/42",
+  );
+  expect(screen.queryByRole("link", { name: "bad" })).toBeNull();
+  expect(screen.getByText("example-org")).toBeInTheDocument();
+});
+
+test("period presets use Monday-based KST weeks", () => {
+  const [lastWeek, thisWeek] = periodPresets("2026-10-22");
+  expect(lastWeek).toMatchObject({ start: "2026-10-12", end: "2026-10-18" });
+  expect(thisWeek).toMatchObject({ start: "2026-10-19", end: "2026-10-21" });
 });

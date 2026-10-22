@@ -64,10 +64,19 @@ def register_routes(app, settings, db_session, principal, visible_report):
     from datetime import date
 
     from fastapi import Query, Response
-    from sqlalchemy import select, update
+    from sqlalchemy import func, select, update
 
     from app.core.security import permitted_repositories, redact
-    from app.models.entities import AuditLog, Job, Report, ReportRevision, Team, WorkItem, utcnow
+    from app.models.entities import (
+        AppUser,
+        AuditLog,
+        Job,
+        Report,
+        ReportRevision,
+        Team,
+        WorkItem,
+        utcnow,
+    )
     from app.schemas.contracts import FinalizeRequest, TeamInput, WorkItemPatch
     from app.services.reporting import render_html, render_report
 
@@ -150,7 +159,7 @@ def register_routes(app, settings, db_session, principal, visible_report):
             accessible_team(team_id, db, user)
             stmt = stmt.where(Report.team_id == team_id)
         allowed = {r.id for r in permitted_repositories(db, user, settings)}
-        results = []
+        rows = []
         for report, job in db.execute(stmt.limit(500)):
             req = job.request_json
             if not set(req["repository_ids"]) <= allowed:
@@ -159,17 +168,35 @@ def register_routes(app, settings, db_session, principal, visible_report):
                 continue
             if to_date and req["start_date"] > to_date.isoformat():
                 continue
-            results.append(
-                {
-                    "id": report.id,
-                    "status": report.status,
-                    "created_at": report.created_at,
-                    "start_date": req["start_date"],
-                    "end_date": req["end_date"],
-                    "team_id": report.team_id,
-                    "coverage_status": report.coverage_json["status"],
-                }
-            )
+            rows.append((report, req))
+        ids = [report.id for report, _ in rows]
+        item_counts = dict(
+            db.execute(
+                select(WorkItem.report_id, func.count())
+                .where(WorkItem.report_id.in_(ids), WorkItem.excluded.is_(False))
+                .group_by(WorkItem.report_id)
+            ).all()
+        )
+        team_ids = {report.team_id for report, _ in rows if report.team_id}
+        team_names = dict(db.execute(select(Team.id, Team.name).where(Team.id.in_(team_ids))).all())
+        results = [
+            {
+                "id": report.id,
+                "status": report.status,
+                "created_at": report.created_at,
+                "finalized_at": report.finalized_at,
+                "start_date": req["start_date"],
+                "end_date": req["end_date"],
+                "type": req.get("type", "team"),
+                "github_logins": req["github_logins"],
+                "repository_count": len(req["repository_ids"]),
+                "work_item_count": item_counts.get(report.id, 0),
+                "team_id": report.team_id,
+                "team_name": team_names.get(report.team_id),
+                "coverage_status": report.coverage_json["status"],
+            }
+            for report, req in rows
+        ]
         audit(db, user, "report.history_viewed")
         db.commit()
         return results
@@ -311,4 +338,123 @@ def register_routes(app, settings, db_session, principal, visible_report):
             "max_events": settings.max_events,
             "settings_source": "deployment_environment",
             "note_ko": "허용 범위와 보존 정책은 배포 환경변수로 변경한 뒤 API와 worker를 함께 재시작합니다",
+            "deployment": {
+                "adapter_mode": settings.adapter_mode,
+                "single_user_mode": settings.single_user_mode,
+                "proxy_auth_mode": None if settings.single_user_mode else settings.proxy_auth_mode,
+                "ghes_base_url": settings.ghes_base_url,
+                "llm_model": settings.llm_model,
+                "report_timezone": settings.report_timezone,
+                "max_pending_jobs": settings.max_pending_jobs,
+                "job_timeout_seconds": settings.job_timeout_seconds,
+            },
         }
+
+    from datetime import UTC, timedelta
+    from zoneinfo import ZoneInfo
+
+    admin_principals = {s.strip() for s in settings.admin_principals.split(",")}
+
+    def as_utc(value):
+        # SQLite drops tzinfo; values are always stored as UTC.
+        return value if value is None or value.tzinfo else value.replace(tzinfo=UTC)
+
+    @app.get("/api/v1/admin/overview")
+    def admin_overview(user=Depends(admin), db=Depends(db_session)):
+        jobs_by_status = dict(db.execute(select(Job.status, func.count()).group_by(Job.status)).all())
+        reports_by_status = dict(
+            db.execute(select(Report.status, func.count()).group_by(Report.status)).all()
+        )
+        tz = ZoneInfo(settings.report_timezone)
+        today = utcnow().astimezone(tz).date()
+        days = [today - timedelta(days=n) for n in range(13, -1, -1)]
+        since = utcnow() - timedelta(days=15)
+        daily = dict.fromkeys(days, 0)
+        for (created,) in db.execute(select(Report.created_at).where(Report.created_at >= since)):
+            day = as_utc(created).astimezone(tz).date()
+            if day in daily:
+                daily[day] += 1
+        audit(db, user, "admin.overview_viewed")
+        db.commit()
+        return {
+            "counts": {
+                "users": db.scalar(select(func.count()).select_from(AppUser)),
+                "active_users": db.scalar(select(func.count()).select_from(AppUser).where(AppUser.active)),
+                "teams": db.scalar(select(func.count()).select_from(Team)),
+                "reports": sum(reports_by_status.values()),
+                "drafts": reports_by_status.get("draft", 0),
+                "finalized": reports_by_status.get("finalized", 0),
+                "work_items": db.scalar(select(func.count()).select_from(WorkItem)),
+                "repositories": len(settings.allowed_repos),
+            },
+            "jobs_by_status": jobs_by_status,
+            "daily_reports": [{"date": d.isoformat(), "count": n} for d, n in daily.items()],
+        }
+
+    @app.get("/api/v1/admin/jobs")
+    def admin_jobs(
+        status: str | None = None,
+        limit: int = Query(100, ge=1, le=500),
+        user=Depends(admin),
+        db=Depends(db_session),
+    ):
+        stmt = (
+            select(Job, AppUser.principal, Report.id)
+            .join(AppUser, Job.requested_by == AppUser.id)
+            .outerjoin(Report, Report.job_id == Job.id)
+            .order_by(Job.created_at.desc())
+            .limit(limit)
+        )
+        if status:
+            stmt = stmt.where(Job.status == status)
+        results = []
+        for job, principal_name, report_id in db.execute(stmt):
+            req = job.request_json
+            created, finished = as_utc(job.created_at), as_utc(job.finished_at)
+            results.append(
+                {
+                    "job_id": job.id,
+                    "principal": principal_name,
+                    "status": job.status,
+                    "stage": job.stage,
+                    "progress_percent": job.progress,
+                    "error_code": job.error_code,
+                    "retry_count": job.retry_count,
+                    "created_at": created,
+                    "finished_at": finished,
+                    "duration_seconds": (finished - created).total_seconds() if finished else None,
+                    "type": req.get("type", "team"),
+                    "start_date": req["start_date"],
+                    "end_date": req["end_date"],
+                    "login_count": len(req["github_logins"]),
+                    "repository_count": len(req["repository_ids"]),
+                    "report_id": report_id,
+                }
+            )
+        audit(db, user, "admin.jobs_viewed")
+        db.commit()
+        return results
+
+    @app.get("/api/v1/admin/users")
+    def admin_users(user=Depends(admin), db=Depends(db_session)):
+        report_counts = dict(
+            db.execute(select(Report.owner_id, func.count()).group_by(Report.owner_id)).all()
+        )
+        last_seen = dict(
+            db.execute(select(AuditLog.principal, func.max(AuditLog.time)).group_by(AuditLog.principal)).all()
+        )
+        rows = db.scalars(select(AppUser).order_by(AppUser.principal))
+        audit(db, user, "admin.users_viewed")
+        db.commit()
+        return [
+            {
+                "id": u.id,
+                "principal": u.principal,
+                "display_name": u.display_name,
+                "role": "admin" if u.principal in admin_principals else "author",
+                "active": u.active,
+                "report_count": report_counts.get(u.id, 0),
+                "last_seen_at": as_utc(last_seen.get(u.principal)),
+            }
+            for u in rows
+        ]
