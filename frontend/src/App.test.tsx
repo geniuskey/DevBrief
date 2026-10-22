@@ -1,8 +1,9 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import App from "./App";
-import { safeEvidenceUrl } from "./api/client";
-import { periodPresets } from "./lib/format";
+import { ApiError, api, isNotFound, safeEvidenceUrl } from "./api/client";
+import { Button } from "./components/ui";
+import { periodPresets, scopeLabel } from "./lib/format";
 import { Markdown } from "./lib/markdown";
 
 function stubApi(role = "admin") {
@@ -125,4 +126,35 @@ test("period presets use Monday-based KST weeks", () => {
   const [lastWeek, thisWeek] = periodPresets("2026-10-22");
   expect(lastWeek).toMatchObject({ start: "2026-10-12", end: "2026-10-18" });
   expect(thisWeek).toMatchObject({ start: "2026-10-19", end: "2026-10-21" });
+});
+
+test("loading button stays disabled even when disabled=false is passed", () => {
+  render(
+    <Button loading disabled={false}>
+      저장
+    </Button>,
+  );
+  expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+});
+
+test("api errors carry HTTP status for not-found handling", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      json: async () => ({ code: "NOT_FOUND", message_ko: "없음" }),
+    })),
+  );
+  const error = await api("/jobs/x").catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(ApiError);
+  expect(isNotFound(error)).toBe(true);
+  expect(isNotFound(new Error("network"))).toBe(false);
+});
+
+test("scope label counts repositories without ids", () => {
+  expect(scopeLabel({ repository_count: 0, organizations: ["org"] })).toBe(
+    "조직 org 전체",
+  );
+  expect(scopeLabel({ repository_count: 2 })).toBe("저장소 2개");
 });

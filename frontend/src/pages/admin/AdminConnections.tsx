@@ -53,19 +53,18 @@ export default function AdminConnections() {
   const [sync, setSync] = useState<{ at: string; rows: SyncResult[] } | null>(
     null,
   );
+  const [syncError, setSyncError] = useState("");
 
   async function syncOrgs() {
     setBusy("sync");
+    setSyncError("");
     try {
       const rows = await api<SyncResult[]>("/admin/organizations/sync", {
         method: "POST",
       });
       setSync({ at: new Date().toISOString(), rows });
     } catch (e) {
-      setSync({
-        at: new Date().toISOString(),
-        rows: [{ login: errorMessage(e), state: "error", repositories: null }],
-      });
+      setSyncError(errorMessage(e));
     } finally {
       setBusy("");
     }
@@ -243,32 +242,6 @@ export default function AdminConnections() {
                         </tbody>
                       </table>
                     )}
-                    {svc.key === "ghes" && sync && (
-                      <table className="table table-compact">
-                        <thead>
-                          <tr>
-                            <th>동기화 ({fullDateTime(sync.at)})</th>
-                            <th>저장소</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {sync.rows.map((o) => (
-                            <tr key={o.login}>
-                              <td className="mono">{o.login}</td>
-                              <td>
-                                {o.state === "synced" ? (
-                                  `${o.repositories}개`
-                                ) : (
-                                  <span className="status-text status-danger">
-                                    <Icon name="alert" size={14} /> {o.state}
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
                     {r.data.warning && (
                       <Banner tone="warning">{r.data.warning}</Banner>
                     )}
@@ -277,6 +250,37 @@ export default function AdminConnections() {
                       <pre>{JSON.stringify(r.data, null, 2)}</pre>
                     </details>
                   </>
+                )}
+                {svc.key === "ghes" && sync && (
+                  <table className="table table-compact">
+                    <thead>
+                      <tr>
+                        <th>동기화 ({fullDateTime(sync.at)})</th>
+                        <th>저장소</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sync.rows.map((o) => (
+                        <tr key={o.login}>
+                          <td className="mono">{o.login}</td>
+                          <td>
+                            {o.state === "synced" ? (
+                              `${o.repositories}개`
+                            ) : (
+                              <span className="status-text status-danger">
+                                <Icon name="alert" size={14} /> {o.state}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {svc.key === "ghes" && syncError && (
+                  <Banner tone="danger" title="동기화 실패">
+                    {syncError}
+                  </Banner>
                 )}
               </div>
               <footer className="conn-foot">

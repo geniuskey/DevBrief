@@ -64,6 +64,10 @@ function Routes() {
       <div className="center-pad">
         <Spinner />
       </div>
+    ) : error ? (
+      <Banner tone="danger" title="서버에 연결하지 못했습니다">
+        {error}
+      </Banner>
     ) : !isAdmin ? (
       <EmptyState
         icon="lock"

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage } from "../../api/client";
 import Icon from "../../components/Icon";
 import { useToast } from "../../components/Toast";
@@ -17,6 +17,7 @@ import {
   duration,
   jobStatusLabel,
   reportTypeLabel,
+  scopeLabel,
 } from "../../lib/format";
 import { href } from "../../lib/router";
 import type { AdminJob } from "./types";
@@ -47,25 +48,31 @@ export default function AdminJobs() {
   const [auto, setAuto] = useState(true);
   const [cancelling, setCancelling] = useState("");
 
-  const load = useCallback(async () => {
-    const all = await api<AdminJob[]>("/admin/jobs?limit=200");
-    setRows(all);
+  // Polls overlap with cancel-triggered reloads; only the latest request may write.
+  const seq = useRef(0);
+  const load = useCallback(async (poll = false) => {
+    const id = ++seq.current;
+    const all = await api<AdminJob[]>(
+      `/admin/jobs?limit=200${poll ? "&poll=true" : ""}`,
+    );
+    if (id === seq.current) setRows(all);
   }, []);
 
   useEffect(() => {
     load().catch((e) => toast.error(errorMessage(e)));
     if (!auto) return;
-    const timer = window.setInterval(
-      () => void load().catch(() => undefined),
-      5000,
-    );
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void load(true).catch(() => undefined);
+    }, 5000);
     return () => window.clearInterval(timer);
   }, [load, auto, toast]);
 
   async function cancel(job: AdminJob) {
     setCancelling(job.job_id);
     try {
-      await api(`/jobs/${job.job_id}/cancel`, { method: "POST" });
+      await api(`/jobs/${encodeURIComponent(job.job_id)}/cancel`, {
+        method: "POST",
+      });
       toast.success("작업을 취소했습니다.");
       await load();
     } catch (e) {
@@ -166,8 +173,11 @@ export default function AdminJobs() {
                           {j.start_date} ~ {j.end_date}
                         </div>
                         <small className="muted">
-                          {reportTypeLabel(j.type)} · {j.login_count}명 · 저장소{" "}
-                          {j.repository_count}개
+                          {reportTypeLabel(j.type)} · {j.login_count}명 ·{" "}
+                          {scopeLabel({
+                            repository_count: j.repository_count,
+                            organizations: j.organizations,
+                          })}
                         </small>
                       </td>
                       <td className="progress-cell">

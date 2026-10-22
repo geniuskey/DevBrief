@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, errorMessage } from "../api/client";
+import { api, errorMessage, isNotFound } from "../api/client";
 import Icon from "../components/Icon";
 import { CoverageBadge, StatusBadge } from "../components/ReportList";
 import { useToast } from "../components/Toast";
@@ -33,6 +33,7 @@ export default function ReportPage({ reportId }: { reportId: string }) {
   const toast = useToast();
   const [report, setReport] = useState<Report | null>(null);
   const [missing, setMissing] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [tab, setTab] = useState<Tab>("items");
   const [person, setPerson] = useState("");
   const [category, setCategory] = useState("");
@@ -42,7 +43,9 @@ export default function ReportPage({ reportId }: { reportId: string }) {
   const [editing, setEditing] = useState<string[]>([]);
   const onEditing = useCallback(
     (id: string, on: boolean) =>
-      setEditing((all) => (on ? [...all, id] : all.filter((x) => x !== id))),
+      setEditing((all) =>
+        on ? [...all.filter((x) => x !== id), id] : all.filter((x) => x !== id),
+      ),
     [],
   );
 
@@ -52,12 +55,17 @@ export default function ReportPage({ reportId }: { reportId: string }) {
     return next;
   }, [reportId]);
 
-  useEffect(() => {
+  const initialLoad = useCallback(() => {
+    setFailed(false);
     load().catch((e) => {
-      setMissing(true);
-      toast.error(errorMessage(e));
+      if (isNotFound(e)) setMissing(true);
+      else {
+        setFailed(true);
+        toast.error(errorMessage(e));
+      }
     });
   }, [load, toast]);
+  useEffect(initialLoad, [initialLoad]);
 
   const people = useMemo(
     () =>
@@ -90,6 +98,20 @@ export default function ReportPage({ reportId }: { reportId: string }) {
         }
       >
         삭제되었거나 접근 권한이 없는 보고서입니다.
+      </EmptyState>
+    );
+  if (failed && !report)
+    return (
+      <EmptyState
+        icon="alert"
+        title="보고서를 불러오지 못했습니다"
+        action={
+          <Button variant="primary" onClick={initialLoad}>
+            다시 시도
+          </Button>
+        }
+      >
+        잠시 후 다시 시도하세요.
       </EmptyState>
     );
   if (!report)

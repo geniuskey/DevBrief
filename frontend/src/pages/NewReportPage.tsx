@@ -125,6 +125,9 @@ export default function NewReportPage({
           }),
         });
         team = created.id;
+        // A retry after a failed report request must reuse, not duplicate, the team.
+        setTeamId(created.id);
+        setSaveTeam(false);
         await session.reloadTeams();
         toast.success(`'${created.name}' 팀을 저장했습니다.`);
       }

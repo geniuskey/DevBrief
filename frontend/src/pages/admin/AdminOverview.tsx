@@ -3,7 +3,13 @@ import { api, errorMessage } from "../../api/client";
 import { ColumnChart, StatusBar } from "../../components/Charts";
 import Icon from "../../components/Icon";
 import { useToast } from "../../components/Toast";
-import { Card, PageHeader, Skeleton, Stat } from "../../components/ui";
+import {
+  Card,
+  LoadError,
+  PageHeader,
+  Skeleton,
+  Stat,
+} from "../../components/ui";
 import { relativeTime, shortDate } from "../../lib/format";
 import { href } from "../../lib/router";
 import { JobStatus } from "./AdminJobs";
@@ -16,13 +22,20 @@ export default function AdminOverview() {
   const [jobs, setJobs] = useState<AdminJob[]>([]);
   const [logs, setLogs] = useState<Audit[]>([]);
   const [policy, setPolicy] = useState<Policy | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    const fail = (e: unknown) => toast.error(errorMessage(e));
+    let warned = false;
+    const fail = (e: unknown) => {
+      setFailed(true);
+      if (!warned) toast.error(errorMessage(e));
+      warned = true;
+    };
     api<Overview>("/admin/overview").then(setData).catch(fail);
     api<AdminJob[]>("/admin/jobs?limit=6").then(setJobs).catch(fail);
     api<Audit[]>("/admin/audit-logs?limit=8").then(setLogs).catch(fail);
     api<Policy>("/admin/policy").then(setPolicy).catch(fail);
-  }, [toast]);
+  }, [toast, attempt]);
 
   const s = data?.jobs_by_status ?? {};
   const totalJobs = Object.values(s).reduce((a, b) => a + b, 0);
@@ -39,6 +52,14 @@ export default function AdminOverview() {
         title="운영 개요"
         description="서비스 사용 현황과 작업 상태, 최근 활동을 한눈에 확인합니다."
       />
+      {failed && (
+        <LoadError
+          onRetry={() => {
+            setFailed(false);
+            setAttempt((n) => n + 1);
+          }}
+        />
+      )}
       <div className="stats-grid">
         {data ? (
           <>

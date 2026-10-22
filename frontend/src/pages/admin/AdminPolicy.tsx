@@ -2,17 +2,29 @@ import { useEffect, useState } from "react";
 import { api, errorMessage } from "../../api/client";
 import Icon from "../../components/Icon";
 import { useToast } from "../../components/Toast";
-import { Badge, Banner, Card, PageHeader, Skeleton } from "../../components/ui";
+import {
+  Badge,
+  Banner,
+  Card,
+  LoadError,
+  PageHeader,
+  Skeleton,
+} from "../../components/ui";
 import type { Policy } from "./types";
 
 export default function AdminPolicy() {
   const toast = useToast();
   const [policy, setPolicy] = useState<Policy | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     api<Policy>("/admin/policy")
       .then(setPolicy)
-      .catch((e) => toast.error(errorMessage(e)));
-  }, [toast]);
+      .catch((e) => {
+        setFailed(true);
+        toast.error(errorMessage(e));
+      });
+  }, [toast, attempt]);
   const dep = policy?.deployment;
   return (
     <>
@@ -27,7 +39,16 @@ export default function AdminPolicy() {
         </Banner>
       )}
       {!policy ? (
-        <Skeleton h={240} />
+        failed ? (
+          <LoadError
+            onRetry={() => {
+              setFailed(false);
+              setAttempt((n) => n + 1);
+            }}
+          />
+        ) : (
+          <Skeleton h={240} />
+        )
       ) : (
         <div className="admin-grid">
           <Card

@@ -26,8 +26,8 @@ export function Button({
     <button
       type="button"
       className={`btn btn-${variant} ${size ? `btn-${size}` : ""} ${className ?? ""}`}
-      disabled={props.disabled || loading}
       {...props}
+      disabled={props.disabled || loading}
     >
       {loading ? <Spinner /> : icon && <Icon name={icon} />}
       {children}
@@ -198,6 +198,22 @@ export function Banner({
   );
 }
 
+export function LoadError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <Banner
+      tone="danger"
+      title="데이터를 불러오지 못했습니다"
+      action={
+        <Button size="sm" icon="refresh" onClick={onRetry}>
+          다시 시도
+        </Button>
+      }
+    >
+      잠시 후 다시 시도하세요.
+    </Banner>
+  );
+}
+
 export function Stat({
   label,
   value,
@@ -349,7 +365,27 @@ export function Dialog({
     ref.current
       ?.querySelector<HTMLElement>("input, textarea, select, button")
       ?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close.current();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close.current();
+      if (e.key !== "Tab" || !ref.current) return;
+      // Keep keyboard focus inside the modal.
+      const items = [
+        ...ref.current.querySelectorAll<HTMLElement>(
+          "a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])",
+        ),
+      ];
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const inside = ref.current.contains(document.activeElement);
+      if (e.shiftKey && (!inside || document.activeElement === first)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (!inside || document.activeElement === last)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
     window.addEventListener("keydown", onKey);
     document.body.classList.add("modal-open");
     return () => {

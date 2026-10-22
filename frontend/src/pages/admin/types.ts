@@ -29,6 +29,7 @@ export interface AdminJob {
   end_date: string;
   login_count: number;
   repository_count: number;
+  organizations: string[];
   report_id: string | null;
 }
 export interface AdminUser {

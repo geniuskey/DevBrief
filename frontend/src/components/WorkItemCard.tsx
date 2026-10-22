@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { safeEvidenceUrl } from "../api/client";
 import Icon from "./Icon";
 import type { IconName } from "./Icon";
@@ -33,6 +33,8 @@ export default function WorkItemCard({
     setEditingState(value);
     onEditing(item.id, value);
   };
+  // A card can unmount mid-edit (tab switch, filter, refetch); release its lock.
+  useEffect(() => () => onEditing(item.id, false), [item.id, onEditing]);
   const [title, setTitle] = useState(item.title_ko);
   const [summary, setSummary] = useState(item.summary_ko);
   const [showAll, setShowAll] = useState(false);

@@ -7,6 +7,7 @@ import {
   Badge,
   Banner,
   Card,
+  LoadError,
   PageHeader,
   Skeleton,
 } from "../../components/ui";
@@ -17,11 +18,20 @@ export default function AdminUsers() {
   const toast = useToast();
   const [rows, setRows] = useState<AdminUser[] | null>(null);
   const [q, setQ] = useState("");
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     api<AdminUser[]>("/admin/users")
       .then(setRows)
-      .catch((e) => toast.error(errorMessage(e)));
-  }, [toast]);
+      .catch((e) => {
+        setFailed(true);
+        toast.error(errorMessage(e));
+      });
+  }, [toast, attempt]);
+  const retry = () => {
+    setFailed(false);
+    setAttempt((n) => n + 1);
+  };
   const visible = (rows ?? []).filter(
     (u) =>
       u.principal.toLowerCase().includes(q.toLowerCase()) ||
@@ -39,6 +49,7 @@ export default function AdminUsers() {
         <code>ADMIN_PRINCIPALS</code>, 저장소 접근은 <code>REPO_ACL_JSON</code>
         으로 관리합니다.
       </Banner>
+      {failed && <LoadError onRetry={retry} />}
       <Card padded={false}>
         <div className="toolbar-row">
           <label className="search-input">
@@ -55,10 +66,12 @@ export default function AdminUsers() {
           </span>
         </div>
         {!rows ? (
-          <div className="pad stack">
-            <Skeleton h={40} />
-            <Skeleton h={40} />
-          </div>
+          !failed && (
+            <div className="pad stack">
+              <Skeleton h={40} />
+              <Skeleton h={40} />
+            </div>
+          )
         ) : (
           <div className="table-wrap">
             <table className="table">

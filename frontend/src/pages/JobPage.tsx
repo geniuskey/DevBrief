@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, errorMessage } from "../api/client";
+import { api, errorMessage, isNotFound } from "../api/client";
 import Icon from "../components/Icon";
 import { useToast } from "../components/Toast";
 import {
@@ -51,12 +51,14 @@ export default function JobPage({ jobId }: { jobId: string }) {
   useEffect(() => {
     let stopped = false;
     let loaded = false;
+    let warned = false;
     let timer = 0;
     async function poll() {
       try {
         const next = await api<Job>(`/jobs/${encodeURIComponent(jobId)}`);
         if (stopped) return;
         loaded = true;
+        warned = false;
         setJob(next);
         if (next.report_id) {
           timer = window.setTimeout(
@@ -70,7 +72,9 @@ export default function JobPage({ jobId }: { jobId: string }) {
       } catch (e) {
         if (stopped) return;
         if (!loaded) setMissing(true);
-        toast.error(errorMessage(e));
+        if (isNotFound(e)) return;
+        if (!warned) toast.error(errorMessage(e));
+        warned = true;
         timer = window.setTimeout(() => void poll(), 3000);
       }
     }
@@ -84,7 +88,9 @@ export default function JobPage({ jobId }: { jobId: string }) {
   async function cancel() {
     setCancelling(true);
     try {
-      await api(`/jobs/${jobId}/cancel`, { method: "POST" });
+      await api(`/jobs/${encodeURIComponent(jobId)}/cancel`, {
+        method: "POST",
+      });
       setJob((j) => j && { ...j, status: "cancelled", stage: "cancelled" });
       toast.info("작업을 취소했습니다.");
     } catch (e) {
