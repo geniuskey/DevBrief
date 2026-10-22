@@ -7,12 +7,19 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { api, errorMessage } from "../api/client";
-import type { Capabilities, Me, Repository, Team } from "../types";
+import type {
+  Capabilities,
+  Me,
+  Organization,
+  Repository,
+  Team,
+} from "../types";
 
 interface Session {
   me: Me | null;
   capabilities: Capabilities | null;
   repositories: Repository[];
+  organizations: Organization[];
   teams: Team[];
   loading: boolean;
   error: string;
@@ -28,6 +35,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [repositories, setRepositories] = useState<Repository[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -39,6 +47,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       api<Me>("/me").then(setMe),
       api<Capabilities>("/settings/capabilities").then(setCapabilities),
       api<Repository[]>("/repositories").then(setRepositories),
+      api<Organization[]>("/organizations").then(setOrganizations),
       api<Team[]>("/teams").then(setTeams),
     ])
       .catch((e) => setError(errorMessage(e)))
@@ -54,6 +63,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         me,
         capabilities,
         repositories,
+        organizations,
         teams,
         loading,
         error,

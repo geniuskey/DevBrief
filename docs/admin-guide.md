@@ -16,9 +16,18 @@ SQLite는 한 호스트에서 worker 한 개만 실행합니다. 파일 잠금�
 4. 사내 CA를 `GHES_CA_BUNDLE`, `LLM_CA_BUNDLE`에 지정합니다. 인증서 검증 해제 옵션은 없습니다. HTTP proxy 환경변수는 상속하지 않습니다.
 5. `GHES_API_VERSION`은 설치 버전에서 확인 후 설정합니다. 빈 값이면 헤더를 생략합니다. JSON mode 미지원 모델은 `LLM_JSON_MODE=false`; 400/422 응답 시 자동으로 한 번 생략 재시도합니다.
 6. 관리자 콘솔(`#/admin`)의 **연결 상태**에서 GHES/LLM 연결 검사를 실행합니다. GHES 검사는 각 허용 저장소 접근 결과와 서버 버전을 표시합니다. PAT가 실질적으로 읽기 전용인지는 검사만으로 증명하지 못합니다.
-7. Fake 테스트와 별도로 실제 3~5명·3~10 저장소의 1주 자료를 수작업 비교하고, 잘못된 사실과 누락을 fixture로 추가하세요.
+7. 저장소가 많으면 `GHES_ALLOWED_REPOS`에 `owner/*`를 넣어 조직 전체를 허용합니다(예: `GHES_ALLOWED_REPOS=example-org/*,other-org/tools`). 아래 [조직 전체 추적](#조직-전체-추적)을 참고하세요.
+8. Fake 테스트와 별도로 실제 3~5명·3~10 저장소의 1주 자료를 수작업 비교하고, 잘못된 사실과 누락을 fixture로 추가하세요.
 
 원문은 승인한 내부 호스트로만 전송하도록 애플리케이션에서 제한합니다. DNS·방화벽·네트워크 egress allowlist는 배포 환경에서 별도로 설정해야 합니다.
+
+## 조직 전체 추적
+
+- `GHES_ALLOWED_REPOS`의 `owner/*` 항목은 해당 조직의 모든 저장소를 허용합니다. 개별 `owner/repo` 항목과 함께 쓸 수 있으며, `GHES_ALLOWED_ORGS`를 설정했다면 그 조직도 포함되어야 합니다.
+- 저장소 목록은 `GET /orgs/{org}/repos`(PAT가 볼 수 있는 저장소만)로 찾습니다. worker가 시작할 때와 유휴 상태에서 `ORG_SYNC_MINUTES`(기본 60분)마다, 그리고 조직 범위 보고서를 만들 때마다 갱신하므로 새 저장소가 자동으로 포함됩니다. 관리자 콘솔 **연결 상태 → 조직 저장소 동기화**로 즉시 갱신할 수도 있습니다. 목록에서 사라진 저장소는 비활성화하되 과거 보고서용 행은 유지합니다.
+- 사용자는 보고서·팀에서 **조직 전체**를 선택할 수 있습니다. 실행 시점에 조직 저장소로 확장하며, 기간 시작 이후 push가 없는 저장소는 조사하지 않고 coverage의 `excluded_repos`와 경고로 표시합니다. 오래된 PR에만 남긴 리뷰는 이때 누락될 수 있습니다.
+- 한 보고서가 조사하는 조직 저장소는 `ORG_MAX_REPOSITORIES`(기본 100)개까지이며 최근 push 순으로 고릅니다. 초과분은 제외 목록에 남고 보고서는 partial입니다. 저장소당 API 호출이 늘어나므로 대상자 수가 많으면 `MAX_API_CALLS`도 함께 검토하세요.
+- 일반 사용자의 `REPO_ACL_JSON`에도 `"example-org/*"`를 쓸 수 있습니다. 조직 전체 선택은 `owner/*` ACL이 있는 사용자(또는 관리자)만 가능합니다.
 
 ## 인증·권한
 
@@ -28,7 +37,7 @@ SQLite는 한 호스트에서 worker 한 개만 실행합니다. 파일 잠금�
 - 기본 `PROXY_AUTH_MODE=signed`: `PROXY_SECRET_FILE`에 최소 32자 이상 무작위 HMAC secret 경로를 지정합니다. oauth2-proxy 연동은 아래 별도 모드를 사용합니다.
 - 헤더: `X-DevBrief-User`, `X-DevBrief-Timestamp`(Unix 초), `X-DevBrief-Signature`(SHA256 HMAC hex).
 - 서명 원문은 `timestamp + "\n" + principal + "\n" + HTTP_METHOD + "\n" + path`입니다. path는 query string을 제외한 `/api/v1/...`입니다. ±60초만 허용합니다. 프록시와 API 사이에는 격리 네트워크/TLS가 필요합니다. 서명은 SSO 검증을 대신하지 않습니다.
-- `ADMIN_PRINCIPALS`는 쉼표로 구분합니다. 일반 사용자는 `REPO_ACL_JSON={"alice@example.com":["example-org/vision"]}`처럼 명시한 repo만 봅니다. 설정되지 않은 사용자는 repo 권한이 없습니다. 관리자는 allowlist 내 전체 저장소에 접근합니다.
+- `ADMIN_PRINCIPALS`는 쉼표로 구분합니다. 일반 사용자는 `REPO_ACL_JSON={"alice@example.com":["example-org/vision","other-org/*"]}`처럼 명시한 repo 또는 조직만 봅니다. 설정되지 않은 사용자는 repo 권한이 없습니다. 관리자는 allowlist 내 전체 저장소에 접근합니다.
 - 일반 사용자의 보고서·팀은 소유자만 접근합니다. 팀 리더 공유 ACL은 후속 범위입니다. 모든 보고서 읽기·편집·확정·다운로드와 Job 조회에서 현재 repo 권한을 다시 확인합니다. 권한 회수 후 과거 보고서도 숨겨집니다.
 - `PUBLIC_ORIGIN`은 브라우저의 정확한 scheme/host/port로 설정합니다. 외부 Origin의 변경 요청을 거부하고 Host도 제한합니다. nginx 배포 예시는 PoC 전용으로 인증 헤더를 제거합니다. 운영 프록시에는 선택한 인증 모드에 맞는 헤더 전달을 구성해야 합니다.
 

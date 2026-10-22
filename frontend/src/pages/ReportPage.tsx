@@ -401,6 +401,19 @@ export default function ReportPage({ reportId }: { reportId: string }) {
                       </tr>
                     );
                   })}
+                  {(coverage.excluded_repos ?? []).map((r) => (
+                    <tr key={r}>
+                      <td className="mono muted">{r}</td>
+                      <td>
+                        <span className="status-text">
+                          <Icon name="info" size={14} /> 조사 제외
+                        </span>
+                      </td>
+                      <td className="muted">
+                        기간 내 push 없음 또는 조사 한도
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

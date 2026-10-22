@@ -42,9 +42,27 @@ export default function AdminPolicy() {
                 ))}
               </div>
             </div>
+            {policy.org_scopes.length > 0 && (
+              <div className="field">
+                <span className="field-label">조직 전체 허용</span>
+                <ul className="repo-mini">
+                  {policy.org_scopes.map((o) => (
+                    <li key={o}>
+                      <Icon name="grid" size={12} />
+                      {o}/*
+                    </li>
+                  ))}
+                </ul>
+                <small className="field-hint">
+                  worker가 {policy.org_sync_minutes}분마다, 그리고 조직 범위
+                  보고서를 만들 때마다 저장소 목록을 갱신합니다. 보고서당 최대{" "}
+                  {policy.org_max_repositories}개 저장소를 조사합니다.
+                </small>
+              </div>
+            )}
             <div className="field">
               <span className="field-label">
-                허용 저장소 {policy.allowed_repositories.length}개
+                개별 허용 저장소 {policy.allowed_repositories.length}개
               </span>
               <ul className="repo-mini">
                 {policy.allowed_repositories.map((r) => (

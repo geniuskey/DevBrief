@@ -15,6 +15,8 @@ Content-Type: application/json
 {"type":"team","github_logins":["alice","bob"],"repository_ids":["저장소 UUID"],"start_date":"2026-10-12","end_date":"2026-10-18","timezone":"Asia/Seoul","policy":"metadata_only"}
 ```
 
+`repository_ids` 대신(또는 함께) `"organizations":["example-org"]`를 보내면 실행 시점의 조직 저장소 전체를 조사합니다. 둘 중 하나는 필요합니다. 조직 범위에서 기간 내 push가 없거나 한도를 넘어 제외한 저장소는 coverage `excluded_repos`에 담깁니다.
+
 202 응답의 job_id로 `GET /jobs/{job_id}`를 조회합니다. status가 complete/partial이면 report_id로 `GET /reports/{report_id}`를 조회합니다. failed에는 안전한 error_code가 있습니다. coverage는 요청·성공·실패 repo 수, 실제 범위·branch, 실패 목록, 수집 시각, completeness와 측정한 event 수를 제공합니다.
 
 `PATCH /reports/{id}/work-items/{item_id}`에 `{version:1,title_ko:"...",summary_ko:"...",excluded:false}` 중 수정할 필드를 전달합니다. stale version은 409이며 최신 보고서를 다시 조회해야 합니다. 수정 시 report revision도 증가합니다.
@@ -24,10 +26,12 @@ Content-Type: application/json
 ## 그 외
 
 - `GET /me`, `/settings/capabilities`, `/repositories?org=&q=`, `/github/users?q=정확한ID`.
-- `GET/POST /teams`, `GET/PUT/DELETE /teams/{id}`. 생성한 Job은 팀 구성의 입력 스냅샷을 유지합니다.
+- `GET /organizations`: 조직 전체로 선택할 수 있는 조직과 현재 알려진 저장소 수.
+- `GET/POST /teams`, `GET/PUT/DELETE /teams/{id}`. 팀도 `repository_ids`와 `organizations`를 가집니다. 생성한 Job은 팀 구성의 입력 스냅샷을 유지합니다.
 - `GET /reports?team_id=&from=YYYY-MM-DD&to=YYYY-MM-DD`: 권한 내 최근 최대 500건에서 필터링합니다. 각 항목은 `type`, `github_logins`, `repository_count`, 포함 업무 수 `work_item_count`, `team_name`, `finalized_at`을 함께 반환합니다.
 - `POST /jobs/{id}/cancel`: queued/running만 취소합니다. 종료된 작업은 409입니다.
-- `POST /admin/connections/ghes/test`, `/admin/connections/llm/test`.
+- `POST /admin/connections/ghes/test`, `/admin/connections/llm/test`. GHES 검사는 `owner/*` 조직 접근 결과도 반환합니다.
+- `POST /admin/organizations/sync`: `owner/*` 조직의 저장소 목록을 즉시 갱신합니다.
 - `GET /admin/policy`: 비밀을 제외한 배포 정책. 정책 변경은 배포 설정에서 수행합니다.
 - `GET /admin/audit-logs?limit=100`: 관리자, 최대 500건.
 - `GET /admin/overview`: 관리자. 사용자·팀·보고서(초안/확정)·업무 수, Job 상태별 건수, `REPORT_TIMEZONE` 기준 최근 14일 일별 보고서 생성 수.

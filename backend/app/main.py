@@ -10,7 +10,15 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.db import make_engine, session_factory
-from app.core.security import AppError, audit, authenticate, permitted_repositories, seed_repositories
+from app.core.security import (
+    AppError,
+    audit,
+    authenticate,
+    permitted_orgs,
+    permitted_repositories,
+    scope_checker,
+    seed_repositories,
+)
 from app.core.settings import Settings, get_settings
 from app.models.entities import Job, Report, Team, WorkItem
 from app.schemas.contracts import ReportRequest
@@ -131,9 +139,8 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
         report = db.get(Report, report_id)
         if not report or (report.owner_id != user.id and user.role != "admin"):
             raise AppError("NOT_FOUND", "보고서를 찾을 수 없습니다", 404)
-        job = db.get(Job, report.job_id)
-        allowed = {r.id for r in permitted_repositories(db, user, settings)}
-        if not set(job.request_json["repository_ids"]) <= allowed:
+        req = db.get(Job, report.job_id).request_json
+        if not scope_checker(db, user, settings)(req["repository_ids"], req.get("organizations")):
             raise AppError("NOT_FOUND", "보고서를 찾을 수 없습니다", 404)
         return report
 
@@ -190,19 +197,30 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
             if (not org or r.full_name.startswith(org.lower() + "/")) and q.lower() in r.full_name
         ]
 
+    @app.get("/api/v1/organizations")
+    def organizations(user=Depends(principal), db=Depends(db_session)):
+        repos = permitted_repositories(db, user, settings)
+        return [
+            {
+                "login": org,
+                "repository_count": sum(r.full_name.split("/")[0] == org for r in repos),
+            }
+            for org in permitted_orgs(user, settings)
+        ]
+
     @app.post("/api/v1/reports", status_code=202)
     def create_report(body: ReportRequest, user=Depends(principal), db=Depends(db_session)):
-        allowed = {r.id for r in permitted_repositories(db, user, settings)}
+        permits = scope_checker(db, user, settings)
         if body.team_id:
             team = db.get(Team, body.team_id)
             if (
                 not team
                 or (team.created_by != user.id and user.role != "admin")
-                or not set(team.repository_ids) <= allowed
+                or not permits(team.repository_ids, team.organizations)
             ):
                 raise AppError("NOT_FOUND", "팀을 찾을 수 없습니다", 404)
-        if not set(body.repository_ids) <= allowed:
-            raise AppError("REPO_FORBIDDEN", "허용되지 않은 저장소입니다", 403)
+        if not permits(body.repository_ids, body.organizations):
+            raise AppError("REPO_FORBIDDEN", "허용되지 않은 저장소 또는 조직입니다", 403)
         pending = list(
             db.scalars(select(Job).where(Job.requested_by == user.id, Job.status.in_(["queued", "running"])))
         )
@@ -222,11 +240,12 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
     @app.get("/api/v1/jobs/{job_id}")
     def get_job(job_id: str, user=Depends(principal), db=Depends(db_session)):
         job = db.get(Job, job_id)
-        allowed = {r.id for r in permitted_repositories(db, user, settings)}
         if (
             not job
             or (job.requested_by != user.id and user.role != "admin")
-            or not set(job.request_json["repository_ids"]) <= allowed
+            or not scope_checker(db, user, settings)(
+                job.request_json["repository_ids"], job.request_json.get("organizations")
+            )
         ):
             raise AppError("NOT_FOUND", "작업을 찾을 수 없습니다", 404)
         report = db.scalar(select(Report).where(Report.job_id == job.id))

@@ -167,14 +167,38 @@ def authenticate(request: Request, db, settings: Settings) -> Principal:
     return Principal(user.id, principal, role, email=email, group=group)
 
 
+def acl_entries(principal: Principal, settings: Settings) -> set[str] | None:
+    """Repository ACL entries (`owner/repo` or `owner/*`) for a principal; None means unrestricted."""
+    if principal.role == "admin":
+        return None
+    return {str(x).lower() for x in json.loads(settings.repo_acl_json).get(principal.name, [])}
+
+
 def permitted_repositories(db, principal: Principal, settings: Settings) -> list[Repository]:
-    allowed = set(settings.allowed_repos)
-    if principal.role != "admin":
-        acl = json.loads(settings.repo_acl_json)
-        allowed &= set(acl.get(principal.name, []))
-    return list(
-        db.scalars(select(Repository).where(Repository.enabled.is_(True), Repository.full_name.in_(allowed)))
-    )
+    acl = acl_entries(principal, settings)
+    rows = db.scalars(select(Repository).where(Repository.enabled.is_(True)).order_by(Repository.full_name))
+    return [
+        r
+        for r in rows
+        if settings.repo_allowed(r.full_name)
+        and (acl is None or r.full_name in acl or r.full_name.split("/")[0] + "/*" in acl)
+    ]
+
+
+def permitted_orgs(principal: Principal, settings: Settings) -> list[str]:
+    """Organizations the principal may request as a whole, including repositories added later."""
+    acl = acl_entries(principal, settings)
+    return [o for o in settings.org_scopes if acl is None or o + "/*" in acl]
+
+
+def scope_checker(db, principal: Principal, settings: Settings):
+    repos = {r.id for r in permitted_repositories(db, principal, settings)}
+    orgs = set(permitted_orgs(principal, settings))
+
+    def permits(repository_ids, organizations=None) -> bool:
+        return set(repository_ids) <= repos and set(organizations or ()) <= orgs
+
+    return permits
 
 
 def audit(db, principal: Principal | str, action: str, resource_id: str = "", result: str = "ok"):

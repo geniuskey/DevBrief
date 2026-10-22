@@ -12,7 +12,7 @@ import {
   Stat,
 } from "../components/ui";
 import { useToast } from "../components/Toast";
-import { kstDate, periodLabel, periodPresets } from "../lib/format";
+import { kstDate, periodLabel, periodPresets, scopeLabel } from "../lib/format";
 import { href } from "../lib/router";
 import { useSession } from "../lib/session";
 import type { History } from "../types";
@@ -181,8 +181,7 @@ export default function HomePage() {
                       <span>
                         <strong>{t.name}</strong>
                         <small>
-                          {t.github_logins.length}명 · 저장소{" "}
-                          {t.repository_ids.length}개
+                          {t.github_logins.length}명 · {scopeLabel(t)}
                         </small>
                       </span>
                       <AvatarStack logins={t.github_logins} max={3} />

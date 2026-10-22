@@ -47,10 +47,26 @@ class Settings(BaseSettings):
     lease_seconds: int = 60
     max_pending_jobs: int = 5
     retention_days: int = 90
+    org_max_repositories: int = 100
+    org_sync_minutes: int = 60
+
+    @property
+    def allowed_repo_entries(self) -> list[str]:
+        return list(dict.fromkeys(x.strip().lower() for x in self.ghes_allowed_repos.split(",") if x.strip()))
 
     @property
     def allowed_repos(self) -> list[str]:
-        return list(dict.fromkeys(x.strip().lower() for x in self.ghes_allowed_repos.split(",") if x.strip()))
+        """Explicitly listed repositories; `org/*` entries are org scopes, not repositories."""
+        return [r for r in self.allowed_repo_entries if not r.endswith("/*")]
+
+    @property
+    def org_scopes(self) -> list[str]:
+        """Organizations whose every repository is allowed and discovered automatically."""
+        return [r[:-2] for r in self.allowed_repo_entries if r.endswith("/*")]
+
+    def repo_allowed(self, full_name: str) -> bool:
+        name = full_name.lower()
+        return name in self.allowed_repos or name.split("/")[0] in self.org_scopes
 
     @property
     def allowed_orgs(self) -> set[str]:
@@ -60,14 +76,24 @@ class Settings(BaseSettings):
     def validate_security(self):
         import re
 
-        if not self.allowed_repos or any(
-            not re.fullmatch(r"[a-z0-9_.-]+/[a-z0-9_.-]+", r) for r in self.allowed_repos
+        if not self.allowed_repo_entries or any(
+            not re.fullmatch(r"[a-z0-9_.-]+/(?:[a-z0-9_.-]+|\*)", r) for r in self.allowed_repo_entries
         ):
-            raise ValueError("명시적인 GHES_ALLOWED_REPOS가 필요합니다")
-        if self.allowed_orgs and any(r.split("/")[0] not in self.allowed_orgs for r in self.allowed_repos):
+            raise ValueError("명시적인 GHES_ALLOWED_REPOS(owner/repo 또는 owner/*)가 필요합니다")
+        if self.allowed_orgs and any(
+            r.split("/")[0] not in self.allowed_orgs for r in self.allowed_repo_entries
+        ):
             raise ValueError("저장소의 조직이 허용 목록에 없습니다")
         if (
-            min(self.max_pages, self.max_events, self.max_api_calls, self.lease_seconds, self.retention_days)
+            min(
+                self.max_pages,
+                self.max_events,
+                self.max_api_calls,
+                self.lease_seconds,
+                self.retention_days,
+                self.org_max_repositories,
+                self.org_sync_minutes,
+            )
             < 1
         ):
             raise ValueError("수집 및 보관 제한은 양수여야 합니다")

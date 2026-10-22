@@ -19,7 +19,9 @@ function stubApi(role = "admin") {
                 access_state: "unverified",
               },
             ]
-          : url.endsWith("/teams") || url.includes("/reports")
+          : url.endsWith("/teams") ||
+              url.endsWith("/organizations") ||
+              url.includes("/reports")
             ? []
             : url.endsWith("/me")
               ? { id: "u1", name: "demo", role }
@@ -51,6 +53,27 @@ test("renders the creation form with allowlisted repositories", async () => {
   );
   expect(screen.getByText("alice")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /주간보고 생성/ })).toBeEnabled();
+});
+
+test("whole-org scope covers its repositories in the picker", async () => {
+  stubApi();
+  const base = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) =>
+    String(input).endsWith("/organizations")
+      ? ({
+          ok: true,
+          json: async () => [{ login: "example-org", repository_count: 1 }],
+        } as Response)
+      : base(input, init),
+  );
+  window.location.hash = "#/new";
+  render(<App />);
+  const chip = await screen.findByRole("button", { name: /example-org/ });
+  chip.click();
+  await waitFor(() => expect(chip).toHaveAttribute("aria-pressed", "true"));
+  expect(screen.getByLabelText(/example-org\/vision/)).toBeDisabled();
+  expect(screen.getByText("조직 전체 포함")).toBeInTheDocument();
+  expect(screen.getByText("조직 example-org 전체")).toBeInTheDocument();
 });
 
 test("home greets the user and links to the admin console for admins", async () => {

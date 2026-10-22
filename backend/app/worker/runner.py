@@ -5,13 +5,14 @@ from datetime import timedelta
 from sqlalchemy import and_, or_, select, update
 
 from app.core.db import make_engine, session_factory
-from app.core.security import AppError, Principal, audit, permitted_repositories, seed_repositories
+from app.core.security import AppError, Principal, audit, scope_checker, seed_repositories
 from app.core.settings import get_settings
 from app.integrations.ghes_client import GHESClient
-from app.models.entities import AppUser, Job, Report, ReportRevision, Repository, Team, WorkItem, uid, utcnow
+from app.models.entities import AppUser, Job, Report, ReportRevision, Team, WorkItem, uid, utcnow
 from app.schemas.contracts import ReportRequest
 from app.services.analysis import analyze_work
 from app.services.collection import collect
+from app.services.discovery import resolve_repositories, sync_org_scopes
 from app.services.grouping import group_work
 from app.services.persistence import store_collection
 from app.services.reporting import render_report
@@ -97,25 +98,26 @@ def run_once(factory, settings) -> bool:
                 if user.principal in {x.strip() for x in settings.admin_principals.split(",")}
                 else "author"
             )
-            allowed = {
-                r.id for r in permitted_repositories(db, Principal(user.id, user.principal, role), settings)
-            }
-            if not user.active or not set(request.repository_ids) <= allowed:
+            requester = Principal(user.id, user.principal, role)
+            permits = scope_checker(db, requester, settings)
+            if not user.active or not permits(request.repository_ids, request.organizations):
                 raise AppError("REPO_PERMISSION_CHANGED", "요청 후 접근 권한이 변경되었습니다")
-            repositories = list(
-                db.scalars(
-                    select(Repository)
-                    .where(Repository.id.in_(request.repository_ids))
-                    .order_by(Repository.full_name)
-                )
-            )
         client = GHESClient(settings)
         try:
+            if request.organizations:
+                touch("discovering", 3)
+            with factory() as db:
+                repositories, excluded, scope_warnings = resolve_repositories(
+                    db, client, settings, requester, request
+                )
             collection = collect(client, request, repositories, touch)
         finally:
             client.close()
         items = group_work(collection)
-        coverage, warnings = collection.coverage, collection.warnings
+        coverage, warnings = collection.coverage, scope_warnings + collection.warnings
+        coverage["excluded_repos"] = excluded
+        if any(w["code"] == "ORG_REPO_LIMIT" for w in scope_warnings) and coverage["status"] == "complete":
+            coverage["status"], coverage["is_complete"] = "partial", False
         analyze_work(items, settings, warnings, touch)
         if any(i.unsupported_claims for i in items) and coverage["status"] == "complete":
             coverage["status"], coverage["is_complete"] = "partial", False
@@ -228,10 +230,16 @@ def main():
         lock_path = str(Path(engine.url.database).resolve()) + ".worker.lock"
         lock_file = open(lock_path, "w")
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    last_sync = 0.0
     try:
         while True:
-            if not run_once(factory, settings):
-                time.sleep(1)
+            if run_once(factory, settings):
+                continue
+            # Idle time keeps `org/*` scopes current so new repositories appear without a restart.
+            if settings.org_scopes and time.monotonic() - last_sync > settings.org_sync_minutes * 60:
+                last_sync = time.monotonic()
+                sync_org_scopes(factory, settings)
+            time.sleep(1)
     except KeyboardInterrupt:
         pass
     finally:

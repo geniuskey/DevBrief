@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, errorMessage } from "../api/client";
 import Icon from "../components/Icon";
-import { LoginInput, RepoPicker } from "../components/Pickers";
+import { LoginInput, OrgPicker, RepoPicker } from "../components/Pickers";
 import { useToast } from "../components/Toast";
 import {
   Avatar,
@@ -12,14 +12,23 @@ import {
   LinkButton,
   PageHeader,
 } from "../components/ui";
+import { repoOrg, scopeLabel } from "../lib/format";
 import { href } from "../lib/router";
 import { useSession } from "../lib/session";
 import type { Team } from "../types";
 
-type Draft = { id?: string; name: string; logins: string[]; repos: string[] };
+type Draft = {
+  id?: string;
+  name: string;
+  logins: string[];
+  repos: string[];
+  orgs: string[];
+};
+const emptyDraft: Draft = { name: "", logins: [], repos: [], orgs: [] };
 
 export default function TeamsPage() {
-  const { teams, repositories, repoName, reloadTeams, isDemo } = useSession();
+  const { teams, repositories, organizations, repoName, reloadTeams, isDemo } =
+    useSession();
   const toast = useToast();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [removing, setRemoving] = useState<Team | null>(null);
@@ -34,7 +43,11 @@ export default function TeamsPage() {
         body: JSON.stringify({
           name: draft.name.trim(),
           github_logins: draft.logins,
-          repository_ids: draft.repos,
+          // Repositories inside a whole-org scope are collected anyway.
+          repository_ids: draft.repos.filter(
+            (id) => !draft.orgs.includes(repoOrg(repoName(id))),
+          ),
+          organizations: draft.orgs,
         }),
       });
       await reloadTeams();
@@ -65,7 +78,10 @@ export default function TeamsPage() {
   }
 
   const valid =
-    draft && draft.name.trim() && draft.logins.length && draft.repos.length;
+    draft &&
+    draft.name.trim() &&
+    draft.logins.length &&
+    (draft.repos.length || draft.orgs.length);
 
   return (
     <>
@@ -77,7 +93,7 @@ export default function TeamsPage() {
           <Button
             variant="primary"
             icon="plus"
-            onClick={() => setDraft({ name: "", logins: [], repos: [] })}
+            onClick={() => setDraft(emptyDraft)}
           >
             새 팀
           </Button>
@@ -92,7 +108,7 @@ export default function TeamsPage() {
               <Button
                 variant="primary"
                 icon="plus"
-                onClick={() => setDraft({ name: "", logins: [], repos: [] })}
+                onClick={() => setDraft(emptyDraft)}
               >
                 첫 팀 만들기
               </Button>
@@ -112,8 +128,7 @@ export default function TeamsPage() {
                 <div>
                   <h2>{t.name}</h2>
                   <small className="muted">
-                    {t.github_logins.length}명 · 저장소{" "}
-                    {t.repository_ids.length}개
+                    {t.github_logins.length}명 · {scopeLabel(t)}
                   </small>
                 </div>
               </header>
@@ -126,6 +141,12 @@ export default function TeamsPage() {
                 ))}
               </div>
               <ul className="repo-mini">
+                {(t.organizations ?? []).map((o) => (
+                  <li key={o}>
+                    <Icon name="grid" size={12} />
+                    {o} (조직 전체)
+                  </li>
+                ))}
                 {t.repository_ids.map((id) => (
                   <li key={id}>
                     <Icon name="repo" size={12} />
@@ -153,6 +174,7 @@ export default function TeamsPage() {
                       name: t.name,
                       logins: t.github_logins,
                       repos: t.repository_ids,
+                      orgs: t.organizations ?? [],
                     })
                   }
                 >
@@ -175,7 +197,7 @@ export default function TeamsPage() {
         open={!!draft}
         wide
         title={draft?.id ? "팀 편집" : "새 팀"}
-        description="팀 이름과 대상자, 저장소를 지정합니다."
+        description="팀 이름과 대상자, 조직 또는 저장소를 지정합니다."
         onClose={() => setDraft(null)}
         footer={
           <>
@@ -210,10 +232,16 @@ export default function TeamsPage() {
               onChange={(logins) => setDraft({ ...draft, logins })}
             />
             <div className="field">
+              <OrgPicker
+                organizations={organizations}
+                selected={draft.orgs}
+                onChange={(orgs) => setDraft({ ...draft, orgs })}
+              />
               <span className="field-label">저장소</span>
               <RepoPicker
                 repositories={repositories}
                 selected={draft.repos}
+                coveredOrgs={draft.orgs}
                 onChange={(repos) => setDraft({ ...draft, repos })}
                 isDemo={isDemo}
               />
