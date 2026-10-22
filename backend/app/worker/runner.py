@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 from datetime import timedelta
@@ -16,6 +17,8 @@ from app.services.discovery import resolve_repositories, sync_org_scopes
 from app.services.grouping import group_work
 from app.services.persistence import store_collection
 from app.services.reporting import render_report
+
+logger = logging.getLogger(__name__)
 
 
 class LeaseLost(Exception):
@@ -82,9 +85,12 @@ def run_once(factory, settings) -> bool:
         while not stop.wait(max(settings.lease_seconds / 3, 0.2)):
             try:
                 touch()
-            except Exception:
+            except (LeaseLost, AppError):
                 lost.set()
                 return
+            except Exception as exc:
+                # A transient DB error is retried on the next beat; the lease outlives several beats.
+                logger.warning("job %s heartbeat failed: %s", job_id, type(exc).__name__)
 
     thread = threading.Thread(target=heartbeat, daemon=True)
     thread.start()
@@ -191,6 +197,8 @@ def run_once(factory, settings) -> bool:
     except LeaseLost:
         pass
     except Exception as exc:
+        if not isinstance(exc, AppError):
+            logger.error("job %s failed: unexpected %s", job_id, type(exc).__name__)
         with factory() as db:
             code = exc.code if isinstance(exc, AppError) else "REPORT_GENERATION_FAILED"
             db.execute(
@@ -233,12 +241,17 @@ def main():
     last_sync = 0.0
     try:
         while True:
-            if run_once(factory, settings):
-                continue
-            # Idle time keeps `org/*` scopes current so new repositories appear without a restart.
-            if settings.org_scopes and time.monotonic() - last_sync > settings.org_sync_minutes * 60:
-                last_sync = time.monotonic()
-                sync_org_scopes(factory, settings)
+            # A transient DB or network failure must not end the worker and strand queued jobs.
+            try:
+                if run_once(factory, settings):
+                    continue
+                # Idle time keeps `org/*` scopes current so new repositories appear without a restart.
+                if settings.org_scopes and time.monotonic() - last_sync > settings.org_sync_minutes * 60:
+                    last_sync = time.monotonic()
+                    sync_org_scopes(factory, settings)
+            except Exception as exc:
+                logger.error("worker loop error: %s", type(exc).__name__)
+                time.sleep(5)
             time.sleep(1)
     except KeyboardInterrupt:
         pass

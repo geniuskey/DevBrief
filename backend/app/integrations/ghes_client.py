@@ -62,7 +62,7 @@ class GHESClient:
                 raise IntegrationError("COLLECTION_LIMIT", "수집 호출 또는 시간 제한에 도달했습니다")
             try:
                 response = self.client.get(url, params=params, headers=headers)
-            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            except httpx.TransportError as exc:
                 if attempt == self.settings.http_retries:
                     raise IntegrationError("GHES_UNAVAILABLE") from exc
                 self.sleep(min(2**attempt + random.random(), 10))
@@ -153,7 +153,12 @@ class GHESClient:
         return data
 
     def user(self, login: str) -> dict:
-        return self.object("users/" + quote(login, safe=""))
+        try:
+            return self.object("users/" + quote(login, safe=""))
+        except IntegrationError as exc:
+            if exc.code == "REPO_NOT_ACCESSIBLE":
+                raise IntegrationError("USER_NOT_FOUND", f"{login}: GitHub 계정을 찾을 수 없습니다") from exc
+            raise
 
     def test_connection(self) -> dict:
         self.object("user")

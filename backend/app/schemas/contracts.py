@@ -67,14 +67,14 @@ class ReportRequest(StrictModel):
 
 
 class WorkItemPatch(StrictModel):
-    version: int = Field(ge=1)
+    version: int = Field(ge=1, le=2**31 - 1)
     title_ko: str | None = Field(default=None, min_length=1, max_length=300)
     summary_ko: str | None = Field(default=None, min_length=1, max_length=4000)
     excluded: bool | None = None
 
 
 class FinalizeRequest(StrictModel):
-    revision: int = Field(ge=1)
+    revision: int = Field(ge=1, le=2**31 - 1)
 
 
 class TeamInput(StrictModel):

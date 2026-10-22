@@ -112,3 +112,19 @@ def test_long_retry_after_is_not_ignored():
     assert error.value.code == "RATE_LIMITED"
     assert sleeps == []
     client.close()
+
+
+def test_dropped_connection_is_retried_then_classified():
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        raise httpx.RemoteProtocolError("Server disconnected without sending a response.")
+
+    settings = Settings(_env_file=None)
+    client = GHESClient(settings, httpx.MockTransport(handler), sleep=lambda _: None)
+    with pytest.raises(IntegrationError) as exc:
+        client.object("repos/example-org/vision")
+    assert exc.value.code == "GHES_UNAVAILABLE"
+    assert len(calls) == settings.http_retries + 1
+    client.close()

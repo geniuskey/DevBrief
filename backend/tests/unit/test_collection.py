@@ -67,3 +67,52 @@ def test_empty_period():
     assert not result.events
     assert result.coverage["status"] == "complete"
     client.close()
+
+
+REPO = SimpleNamespace(id="repo", full_name="example-org/vision")
+
+
+def test_unknown_login_warns_without_dropping_others():
+    client = GHESClient(Settings(_env_file=None))
+    result = collect(client, request(["alice", "nosuchuser"]), [REPO])
+    assert result.coverage["status"] == "complete"
+    assert result.commits
+    assert [w["code"] for w in result.warnings if w["code"] == "USER_NOT_FOUND"] == ["USER_NOT_FOUND"]
+    client.close()
+
+
+def test_empty_commit_message_is_collected():
+    fake = FakeGHES()
+
+    def handler(req):
+        if req.url.path.endswith("/pulls"):
+            return httpx.Response(200, json=[])
+        if req.url.path.endswith("/commits"):
+            return httpx.Response(200, json=[commit("d" * 40, "")])
+        return fake(req)
+
+    client = GHESClient(Settings(_env_file=None), httpx.MockTransport(handler))
+    result = collect(client, request(["alice"]), [REPO])
+    assert result.coverage["status"] == "complete"
+    assert len(result.commits) == 1
+    client.close()
+
+
+def test_truncated_pr_commits_keep_collecting_reviews():
+    fake = FakeGHES()
+
+    def handler(req):
+        response = fake(req)
+        if req.url.path.endswith("/pulls/42"):
+            # The PR claims more commits than the commits API returned.
+            return httpx.Response(200, json={**response.json(), "commits": 999})
+        return response
+
+    client = GHESClient(Settings(_env_file=None), httpx.MockTransport(handler))
+    result = collect(client, request(), [REPO])
+    assert result.coverage["status"] == "partial"
+    assert result.coverage["is_complete"] is False
+    assert result.coverage["failed_repos"] == []
+    assert len(result.reviews) == 1
+    assert any(w["code"] == "PR_COMMITS_TRUNCATED" for w in result.warnings)
+    client.close()

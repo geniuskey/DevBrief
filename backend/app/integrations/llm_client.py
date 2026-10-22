@@ -87,7 +87,7 @@ class LLMClient:
         while True:
             try:
                 response = self.client.post(url, json=body)
-            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            except httpx.TransportError as exc:
                 if retries >= self.settings.http_retries:
                     raise IntegrationError("LLM_UNAVAILABLE") from exc
                 retries += 1

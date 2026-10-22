@@ -45,7 +45,12 @@ def register_routes(app, settings, db_session, principal, visible_report):
             raise AppError("INVALID_LOGIN", "정확한 GitHub ID를 입력하세요", 422)
         client = GHESClient(settings)
         try:
-            account = client.user(q)
+            try:
+                account = client.user(q)
+            except AppError as exc:
+                if exc.code == "USER_NOT_FOUND":
+                    return []
+                raise
             return [
                 {
                     "login": account["login"],
@@ -419,6 +424,7 @@ def register_routes(app, settings, db_session, principal, visible_report):
     def admin_jobs(
         status: str | None = None,
         limit: int = Query(100, ge=1, le=500),
+        poll: bool = False,
         user=Depends(admin),
         db=Depends(db_session),
     ):
@@ -456,8 +462,10 @@ def register_routes(app, settings, db_session, principal, visible_report):
                     "report_id": report_id,
                 }
             )
-        audit(db, user, "admin.jobs_viewed")
-        db.commit()
+        # The console auto-refreshes every few seconds; audit the view, not each refresh.
+        if not poll:
+            audit(db, user, "admin.jobs_viewed")
+            db.commit()
         return results
 
     @app.get("/api/v1/admin/users")

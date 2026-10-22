@@ -33,13 +33,23 @@ def collect(
     start, end = request.window()
     logins = set()
     for login in request.github_logins:
-        account = client.user(login)
+        try:
+            account = client.user(login)
+        except AppError as exc:
+            # One mistyped login should not discard everyone else's activity.
+            if exc.code != "USER_NOT_FOUND":
+                raise
+            result.warnings.append({"code": exc.code, "message_ko": exc.message})
+            continue
         logins.add(account["login"].lower())
         if account.get("type") == "Bot":
             result.warnings.append(
                 {"code": "BOT_ACCOUNT", "message_ko": f"{login}: 봇 계정 활동이 포함됩니다"}
             )
+    if not logins:
+        raise IntegrationError("USER_NOT_FOUND", "조회할 수 있는 GitHub 계정이 없습니다")
     failed, succeeded, branches = [], [], {}
+    truncated: set[str] = set()
     secret_values = (
         (client.settings.secret("ghes_pat_file"), client.settings.secret("llm_api_key_file"))
         if client.settings.adapter_mode == "real"
@@ -128,7 +138,7 @@ def collect(
             occurred.isoformat(),
             author,
             url,
-            {"title": message.splitlines()[0], "message": message},
+            {"title": (message.splitlines() or [""])[0], "message": message},
         )
 
     for index, repo in enumerate(repositories):
@@ -185,8 +195,14 @@ def collect(
                 for c in commits:
                     save_commit(repo, c, number)
                 if len(commits) >= 250 or pr.get("commits", len(commits)) > len(commits):
-                    raise IntegrationError(
-                        "PR_COMMITS_TRUNCATED", "PR 커밋 API 한도로 일부 브랜치 커밋이 누락될 수 있습니다"
+                    # Keep collecting: the rest of this PR and repository are still valid evidence.
+                    truncated.add(repo.full_name)
+                    result.warnings.append(
+                        {
+                            "code": "PR_COMMITS_TRUNCATED",
+                            "repository": repo.full_name,
+                            "message_ko": f"PR #{number}: PR 커밋 API 한도로 일부 브랜치 커밋이 누락될 수 있습니다",
+                        }
                     )
                 for review in client.pages(f"{root}/pulls/{number}/reviews"):
                     reviewer = (review.get("user") or {}).get("login", "").lower()
@@ -251,7 +267,13 @@ def collect(
                     else "예상한 GHES 응답 형식과 다릅니다",
                 }
             )
-    status = "complete" if not failed else "partial" if succeeded or result.events else "failed"
+    status = (
+        ("partial" if truncated else "complete")
+        if not failed
+        else "partial"
+        if succeeded or result.events
+        else "failed"
+    )
     result.warnings.append(
         {
             "code": "COVERAGE_BOUNDARY",
@@ -266,7 +288,7 @@ def collect(
         "repositories_requested": len(repositories),
         "repositories_succeeded": len(succeeded),
         "repositories_failed": len(failed),
-        "is_complete": not failed,
+        "is_complete": not failed and not truncated,
         "status": status,
         "collected_at": datetime.now(UTC).isoformat(),
         "counts": {

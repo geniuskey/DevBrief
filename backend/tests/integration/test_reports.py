@@ -107,3 +107,27 @@ def test_pending_job_keeps_snapshot_after_team_deletion(client, app, report_body
     assert client.delete(f"/api/v1/teams/{team['id']}").status_code == 200
     run_once(app.state.factory, app.state.settings)
     assert client.get(f"/api/v1/jobs/{jid}").json()["report_id"]
+
+
+def test_oversized_version_numbers_are_rejected(client, app, report_body):
+    report = generate(client, app, report_body)
+    rid, item = report["id"], report["work_items"][0]
+    huge = 2**70
+    assert client.post(f"/api/v1/reports/{rid}/finalize", json={"revision": huge}).status_code == 422
+    assert (
+        client.patch(f"/api/v1/reports/{rid}/work-items/{item['id']}", json={"version": huge}).status_code
+        == 422
+    )
+
+
+def test_identical_retry_reuses_job_at_pending_limit(client, app, report_body):
+    limit = app.state.settings.max_pending_jobs
+    first = client.post("/api/v1/reports", json=report_body).json()["job_id"]
+    for day in range(1, limit):
+        body = {**report_body, "start_date": f"2026-10-{12 - day:02d}"}
+        assert client.post("/api/v1/reports", json=body).status_code == 202
+    again = client.post("/api/v1/reports", json=report_body)
+    assert again.status_code == 202
+    assert again.json()["job_id"] == first
+    other = {**report_body, "start_date": "2026-09-01", "end_date": "2026-09-07"}
+    assert client.post("/api/v1/reports", json=other).status_code == 429

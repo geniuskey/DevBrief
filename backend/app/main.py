@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -22,6 +23,8 @@ from app.core.security import (
 from app.core.settings import Settings, get_settings
 from app.models.entities import Job, Report, Team, WorkItem
 from app.schemas.contracts import ReportRequest
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
@@ -75,7 +78,15 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
         else:
             try:
                 response = await call_next(request)
-            except Exception:
+            except Exception as exc:
+                # Class name only: exception text may carry upstream payloads or credentials.
+                logger.error(
+                    "unhandled %s on %s %s request_id=%s",
+                    type(exc).__name__,
+                    request.method,
+                    request.url.path,
+                    request.state.request_id,
+                )
                 response = JSONResponse(
                     {
                         "code": "INTERNAL_ERROR",
@@ -224,12 +235,13 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
         pending = list(
             db.scalars(select(Job).where(Job.requested_by == user.id, Job.status.in_(["queued", "running"])))
         )
-        if len(pending) >= settings.max_pending_jobs:
-            raise AppError("TOO_MANY_JOBS", "진행 중인 작업이 많습니다. 완료 후 다시 시도하세요", 429)
         payload = body.model_dump(mode="json")
+        # A retried identical request reuses its job even when the user is at the limit.
         for job in pending:
             if job.request_json == payload:
                 return {"job_id": job.id, "status": job.status, "status_url": f"/api/v1/jobs/{job.id}"}
+        if len(pending) >= settings.max_pending_jobs:
+            raise AppError("TOO_MANY_JOBS", "진행 중인 작업이 많습니다. 완료 후 다시 시도하세요", 429)
         job = Job(requested_by=user.id, request_json=payload)
         db.add(job)
         db.flush()
